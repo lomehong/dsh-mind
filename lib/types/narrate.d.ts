@@ -51,3 +51,18 @@ export interface PresenceInput {
 export declare function presenceLine(s: PresenceInput, now?: number): string;
 /** 时间感知问候（页面头部）。 */
 export declare function greeting(now: Date): string;
+export type BeingMood = 'stopped' | 'asleep' | 'attentive' | 'thinking' | 'awake';
+export interface BeingStatusInput {
+    enabled: boolean;
+    stoppedByMaster: boolean;
+    running: boolean;
+    quiet?: {
+        enabled: boolean;
+        active: boolean;
+        start: string;
+        end: string;
+    };
+    pending?: number;
+}
+/** 状态 → 形体情态（优先级：叫停 > 入睡 > 注意到你 > 思考 > 清醒）。 */
+export declare function beingMood(s: BeingStatusInput | undefined): BeingMood;

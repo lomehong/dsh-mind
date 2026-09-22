@@ -1,6 +1,6 @@
 /** narrate 纯函数测试：机器语义 → 第一人称生活语义的翻译不变量。 */
 import { describe, expect, it } from 'vitest'
-import { groupByDay, greeting, narrateStep, presenceLine } from '../src/narrate.ts'
+import { beingMood, groupByDay, greeting, narrateStep, presenceLine } from '../src/narrate.ts'
 import type { TimelineStep } from '../src/timeline.ts'
 
 const step = (over: Partial<TimelineStep>): TimelineStep => ({
@@ -142,5 +142,19 @@ describe('greeting', () => {
     expect(greeting(new Date(2026, 8, 20, 15, 0))).toBe('下午好')
     expect(greeting(new Date(2026, 8, 20, 20, 0))).toBe('晚上好')
     expect(greeting(new Date(2026, 8, 20, 2, 0))).toBe('夜深了')
+  })
+})
+
+describe('beingMood', () => {
+  const base = { enabled: true, stoppedByMaster: false, running: false }
+  it('优先级：叫停 > 入睡 > 注意到你 > 思考 > 清醒', () => {
+    expect(beingMood({ ...base, stoppedByMaster: true, running: true, pending: 1 })).toBe('stopped')
+    expect(beingMood({ ...base, quiet: { enabled: true, active: true, start: '01:00', end: '08:00' }, running: true })).toBe('asleep')
+    expect(beingMood({ ...base, pending: 2, running: true })).toBe('attentive')
+    expect(beingMood({ ...base, running: true })).toBe('thinking')
+    expect(beingMood(base)).toBe('awake')
+  })
+  it('无数据（加载中）按清醒呈现', () => {
+    expect(beingMood(undefined)).toBe('awake')
   })
 })

@@ -166,3 +166,25 @@ export function greeting(now: Date): string {
   if (h < 23) return '晚上好'
   return '夜深了'
 }
+
+// ==== 存在体（The Being）形体情态 ====
+
+export type BeingMood = 'stopped' | 'asleep' | 'attentive' | 'thinking' | 'awake'
+
+export interface BeingStatusInput {
+  enabled: boolean
+  stoppedByMaster: boolean
+  running: boolean
+  quiet?: { enabled: boolean; active: boolean; start: string; end: string }
+  pending?: number
+}
+
+/** 状态 → 形体情态（优先级：叫停 > 入睡 > 注意到你 > 思考 > 清醒）。 */
+export function beingMood(s: BeingStatusInput | undefined): BeingMood {
+  if (s === undefined) return 'awake'
+  if (s.stoppedByMaster || !s.enabled) return 'stopped'
+  if (s.quiet?.active === true) return 'asleep'
+  if ((s.pending ?? 0) > 0) return 'attentive'
+  if (s.running) return 'thinking'
+  return 'awake'
+}

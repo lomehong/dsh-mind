@@ -15,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { presenceLine } from '../narrate.ts'
 import { usePoll, type StatusPayload } from './api.ts'
+import { CompanionLayer } from './Companion.tsx'
 import { MindPage } from './MindPage.tsx'
 
 export const inject = ['slots']
@@ -109,8 +110,30 @@ export function apply(ctx: ClientContext): void {
     return <MindPage />
   }))
 
+  // conversation.view：当前宿主的一级入口（「心智」Tab，任务看板同款位置）
+  try {
+    ctx.slots.inject('conversation.view', () =>
+      ctx.slots.register(
+        { name: 'conversation.view', id: 'mind', order: 21, label: () => '心智' },
+        MindPage,
+      ),
+    )
+  } catch (e) { console.warn('[dsh-mind] conversation.view 注册失败（显式降级）:', e instanceof Error ? e.message : String(e)) }
+
+  // shell.overlay：常驻存在体（窗口右下角——TA 住在整个 dsh 里，任何页面可见）
+  try {
+    ctx.slots.inject('shell.overlay', () =>
+      ctx.slots.register(
+        { name: 'shell.overlay', id: 'dsh-mind-companion', order: 90, label: () => '心智' },
+        CompanionLayer,
+      ),
+    )
+  } catch (e) { console.warn('[dsh-mind] shell.overlay 注册失败（显式降级）:', e instanceof Error ? e.message : String(e)) }
+
   // alpha.2 全局面板（特性检测双写，先例 dsh-task-board）：宿主具备 main /
-  // sidebar.panellist 槽位时，心智主页挂为侧边栏一级页面；旧宿主静默跳过。
+  // sidebar.panellist 槽位时，心智主页挂为侧边栏一级页面。
+  // （2026-09-22 实测：当前桌面壳未启用该组槽位——task-board 的看板图标同样缺席；
+  //  升级宿主后本注册自动生效。）
   const slots = ctx.slots as ClientContext['slots'] & { spec?: (name: string) => unknown }
   if (typeof slots.spec !== 'function') return
   try {
@@ -124,5 +147,5 @@ export function apply(ctx: ClientContext): void {
         (props: { size: number; active: boolean }) => <SidebarIcon size={props.size} active={props.active} />,
       ))
     }
-  } catch { /* 新 API 不可用时静默回退插件页形态 */ }
+  } catch (e) { console.warn('[dsh-mind] main/panellist 注册失败（显式降级）:', e instanceof Error ? e.message : String(e)) }
 }
