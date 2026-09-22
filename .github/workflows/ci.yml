@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm test
+      - run: npm run build:client
+      # 打包内容冒烟：lib/index.js + lib/client.js + cordis.patch.yml 必须在包里
+      - run: npm pack --ignore-scripts
+      - run: node -e "const fs=require('fs');const tgz=fs.readdirSync('.').find(f=>f.endsWith('.tgz'));if(!tgz)throw new Error('no tgz');const out=require('child_process').execSync(`tar -tzf ${tgz}`).toString();for(const f of ['package/lib/index.js','package/lib/client.js','package/cordis.patch.yml','package/src/index.ts']){if(!out.includes(f))throw new Error('missing '+f)};console.log('pack ok')"

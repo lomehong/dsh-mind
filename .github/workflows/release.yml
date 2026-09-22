@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # 创建 GitHub Release 并上传 tarball
+
+# 纯 GitHub 分发：tag 一推 -> 构建 + 审计 + tarball 挂 GitHub Release。
+# 安装：dsh plugin --profile web add <Release 页面的 .tgz URL>
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm test
+      - run: npm run build:client
+      - run: npm pack --ignore-scripts
+      - name: 打包内容审计（files 白名单与入口完整性）
+        shell: bash
+        run: |
+          node -e "
+          const fs = require('fs');
+          const cp = require('child_process');
+          const tgz = fs.readdirSync('.').find(f => f.endsWith('.tgz'));
+          if (!tgz) throw new Error('no tgz produced');
+          const out = cp.execSync('tar -tzf ' + tgz).toString();
+          for (const f of ['package/lib/index.js', 'package/lib/client.js', 'package/cordis.patch.yml']) {
+            if (!out.includes(f)) throw new Error('pack missing ' + f);
+          }
+          console.log('audit ok:', tgz);
+          "
+      - run: cp dsh-extra-dsh-mind-*.tgz dsh-mind-latest.tgz
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: '*.tgz'
