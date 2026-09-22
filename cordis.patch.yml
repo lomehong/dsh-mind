@@ -1,0 +1,6 @@
+- insert:
+    - id: dsh-mind
+      name: '@dsh-extra/dsh-mind'
+      provide: [dsh-mind]
+      # 无硬注入：memory/task-board/twin/gateway 全部惰性 ctx.get（宪章 §1）。
+      config: {}

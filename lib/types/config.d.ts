@@ -1,0 +1,40 @@
+export interface QuietHours {
+    tz: string;
+    start: string;
+    end: string;
+    enabled: boolean;
+}
+export interface MindConfig {
+    /** 总开关（kill switch 的配置面；显式停止另存 state.stoppedByMaster） */
+    enabled: boolean;
+    backoffBaseMs: number;
+    backoffFactor: number;
+    backoffCapMs: number;
+    hold: number;
+    quietHours: QuietHours;
+    /** 两级 spend cap（USD/日） */
+    spendSoftCapUsd: number;
+    spendHardCapUsd: number;
+    /** 成本核算单价（USD / 每百万 token） */
+    priceUsdPerMTokIn: number;
+    priceUsdPerMTokOut: number;
+    reactiveMergeWindowMs: number;
+    reactiveHourlyMax: number;
+    /** 唤醒 run 硬超时（续命归调度器） */
+    wakeTimeoutMs: number;
+    /** 时间线保留天数（滚动归档） */
+    timelineRetentionDays: number;
+    /** 方案 A 底座：唤醒 run 复用的分身预设 */
+    presetId: string;
+    /** 输入 token 超过此值即重建（弃旧）心智会话 */
+    sessionResetTokens: number;
+}
+export declare const CONFIG_DEFAULTS: MindConfig;
+/** 配置合并（纯函数，测试用）：非法键回落默认并夹紧边界。 */
+export declare function mergeMindConfig(raw: unknown): MindConfig;
+export declare function mindHome(): string;
+export declare function mindConfigPath(): string;
+/** 读取配置（30s TTL 缓存；缺文件/解析失败 → 全默认，绝不抛）。 */
+export declare function loadMindConfig(now?: number): MindConfig;
+/** 供测试重置缓存。 */
+export declare function resetConfigCache(): void;

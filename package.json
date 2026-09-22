@@ -1,0 +1,36 @@
+{
+  "name": "@dsh-extra/dsh-mind",
+  "version": "0.1.0",
+  "description": "分身心智运行时：时间线 + 唤醒调度器 + 函数菜单唤醒 run——分身的持续心智（设计稿 docs/mind-runtime-design.md v0.3）",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./client": { "default": "./lib/client.js" },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": { "patch": "cordis.patch.yml" },
+    "client": {
+      "inject": ["@deepseek-ai/dsh-client-ui-slots"],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "build:client": "node scripts/build-client.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.7"
+  }
+}
