@@ -9,17 +9,38 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: npm test
-      - run: npm run build:client
-      # 打包内容冒烟：lib/index.js + lib/client.js + cordis.patch.yml 必须在包里
-      - run: npm pack --ignore-scripts
-      - run: node -e "const fs=require('fs');const tgz=fs.readdirSync('.').find(f=>f.endsWith('.tgz'));if(!tgz)throw new Error('no tgz');const out=require('child_process').execSync(`tar -tzf ${tgz}`).toString();for(const f of ['package/lib/index.js','package/lib/client.js','package/cordis.patch.yml','package/src/index.ts']){if(!out.includes(f))throw new Error('missing '+f)};console.log('pack ok')"
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test (pre-build)
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Test (post-build)
+        run: npm test
+      - name: Build client
+        run: npm run build:client
+      # 打包内容冒烟：files 白名单 = lib/** + cordis.patch.yml（lib 发布型，
+      # 不含 src——勿照抄 yuyi 的 allowSrc 清单）。入口与 patch 必须在包里。
+      - name: Pack
+        run: npm pack --ignore-scripts
+      - name: Pack audit
+        run: |
+          node -e "
+          const fs = require('fs');
+          const cp = require('child_process');
+          const tgz = fs.readdirSync('.').find(f => f.endsWith('.tgz'));
+          if (!tgz) throw new Error('no tgz produced');
+          const out = cp.execSync('tar -tzf ' + tgz).toString();
+          for (const f of ['package/lib/index.js', 'package/lib/client.js', 'package/cordis.patch.yml']) {
+            if (!out.includes(f)) throw new Error('pack missing ' + f);
+          }
+          console.log('pack ok');
+          "
