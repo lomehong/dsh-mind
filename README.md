@@ -15,7 +15,12 @@ agency 模型并按 DSH 套件治理架构本地化。
   完整工具面（记忆读写、task_delegate、web…）天然可用，治理随账本走
 - **成本护栏**：两级 spend cap（80% 软顶降级 / 100% 硬顶停自发）、静音时段、
   kill switch（fail-safe 语义见设计 §12.2）
-- **插件页速览**：成本行/状态/kill switch/时间线最近步骤
+- **心智主页（UI/UX v1，v0.2.0）**：侧边栏「心智」一级页面——TA 的存在界面：
+  在场感（呼吸光环 + 第一人称状态句）、生活流（时间线按天分组的叙事化呈现）、
+  留言闭环（对 TA 说话 → message_in → 唤醒 → 回复同界面呈现）、照护抽屉
+  （预算/作息/待批/休息开关，治理数据降为细节层）；右上角一键切「工程视图」
+  （原五区块运维面板）
+- **插件页人物卡**：summary 一行在场状态 + page 心智主页
 
 P1 无渠道依赖（渠道适配器是 P2）：兄弟插件全缺席时心智照常运行（宪章原则二）。
 
@@ -41,8 +46,22 @@ config.json）。
 }
 ```
 
-kill switch：插件页「⏸ 暂停心智」按钮，或 `config.json` 的 `enabled: false`。
+kill switch：心智主页「照看 TA → 让 TA 休息」、工程视图「⏸ 暂停心智」，
+或 `config.json` 的 `enabled: false`。
 显式停止持久化（重启仍停）；配置文件损坏回落内置默认保守运行（§12.2 双状态）。
+
+## 心智主页 HTTP 面（sameOrigin 门禁，LESSONS #11）
+
+| 路由 | 方法 | 门禁 | 用途 |
+|---|---|---|---|
+| `/dsh-mind/status` | GET | sameOrigin | 在场感状态（v3：静音时段/下次唤醒/待批数） |
+| `/dsh-mind/timeline?n=` | GET | sameOrigin | 生活流数据源（≤200 步） |
+| `/dsh-mind/say` | POST | + `x-mind-key` | 主人留言：message_in 落时间线 + 反应性唤醒 |
+| `/dsh-mind/kill` | POST | + `x-mind-key` | 休息开关 |
+| `/dsh-mind/token` | GET | sameOrigin | 下发写门禁键（进程启动随机生成） |
+
+写门禁键为启动时随机值（先例 dsh-memory）：跨站表单/脚本无法携带自定义头，
+跨源请求同时被 sameOrigin 闸拒绝。
 
 ## 单独可用性（宪章原则二）
 

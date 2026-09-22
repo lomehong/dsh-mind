@@ -1,8 +1,8 @@
 # dsh-mind（@dsh-extra/dsh-mind）
 
 分身心智运行时：时间线（append-only jsonl）+ 唤醒调度器（分级退避）+ 函数菜单
-唤醒 run——让分身拥有持续心智（设计稿：套件仓 `docs/mind-runtime-design.md` v0.3，
-五角色评审后版本）。
+唤醒 run + 心智主页（TA 的存在界面）——让分身拥有持续心智（设计稿：套件仓
+`docs/mind-runtime-design.md` v0.5，五角色评审 + UI/UX 重造版本）。
 
 ## src/ 结构
 - index.ts — 插件入口：tick 调度（1s）、唤醒编排（方案 A 底座：typertGateway +
@@ -16,9 +16,12 @@
 - gateway.ts — typertGateway 封装（契约照搬 dsh-task-board）
 - runner.ts — 唤醒执行器（会话懒建复用/超阈值重建、follow→cursor→page 轮询 turn/end、
   FINAL 与用量抽取）
-- panel-api.ts — 插件页速览 HTTP 路由（sameOrigin 门禁，LESSONS #11）
-- client/index.tsx — plugins.bundle.config 五区块速览（成本行/状态/kill switch/时间线）
-- tests/ — vitest（scheduler/timeline/config/wake-prompt；时钟与 DSH_HOME 注入隔离）
+- panel-api.ts — HTTP 面（sameOrigin + 写门禁键）：status v3 / timeline / say / kill / token
+- narrate.ts — 叙事纯函数层：时间线步骤 → 第一人称生活语言（机器语义→人的语义，测试覆盖）
+- client/index.tsx — 三挂点：插件页人物卡（summary）+ 心智主页（main key='mind'，特性检测双写）+ 侧边栏在场图标
+- client/MindPage.tsx — 心智主页：在场感头部/生活流/留言闭环/照护抽屉/工程视图切换
+- client/EngView.tsx / api.ts / format.tsx — 工程视图（原五区块）/轮询与写门禁/格式化
+- tests/ — vitest（scheduler/timeline/config/wake-prompt/narrate；时钟与 DSH_HOME 注入隔离）
 
 ## 红线
 - 改动前先读套件宪章（`E:\code\nodejs\dsh\docs\suite-charter.md`）与设计稿 v0.3

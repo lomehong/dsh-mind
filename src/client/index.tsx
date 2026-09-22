@@ -1,133 +1,128 @@
 /**
- * dsh-mind 客户端插件：「插件」管理页配置区速览（plugins.bundle.config，
- * key=包名）——成本行 / 状态 / kill switch / 时间线最近步骤（设计 §3.3 五区块）。
+ * dsh-mind 客户端插件。
+ *
+ * 三个挂点（设计 §3.3 UI 重造）：
+ * - plugins.bundle.config（key=包名）：summary=迷你人物卡；page=心智主页
+ * - main（key='mind'，特性检测）：侧边栏「心智」一级页面的主体
+ * - sidebar.panellist（id='mind'，特性检测）：在场感图标（呼吸点）
+ *
+ * 宿主客户端模块契约：命名导出 apply + inject 声明（对齐 dsh-task-board；
+ * default activate 形态会导致 DI 缺失与看板不渲染——套件教训）。
  */
 import { useEffect, useState } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import { presenceLine } from '../narrate.ts'
+import { usePoll, type StatusPayload } from './api.ts'
+import { MindPage } from './MindPage.tsx'
 
 export const inject = ['slots']
 
-interface StatusPayload {
-  ok: boolean
-  enabled: boolean
-  stoppedByMaster: boolean
-  running: boolean
-  backoffLevel: number
-  lastWakeAt: number
-  spend: { date: string; usedUsd: number; softCapUsd: number; hardCapUsd: number }
-  pending: number
-  tail: Array<{ seq: number; ts: string; type: string; content: string; fn?: string }>
+const C = {
+  sub: 'var(--dsw-alias-label-secondary, #888)',
+  border: 'var(--dsw-alias-border-l1, rgba(128,128,128,.25))',
+  ok: 'var(--dsw-alias-state-success-primary, #2A9D8F)',
+  brand: 'var(--dsw-alias-brand-primary, #4a6fa5)',
 }
 
-function useStatus(pollMs: number): { data?: StatusPayload; error?: string; refresh(): void } {
-  const [data, setData] = useState<StatusPayload>()
-  const [error, setError] = useState<string>()
-  const [tick, setTick] = useState(0)
+/** 迷你在场点（人物卡/侧边栏共用语义）。 */
+function PresenceDot({ status, size = 8 }: { status: StatusPayload | undefined; size?: number }): JSX.Element {
+  const stopped = status !== undefined && (status.stoppedByMaster || !status.enabled)
+  const asleep = status?.quiet?.active === true
+  const color = stopped ? C.sub : asleep ? C.brand : status?.running === true ? C.ok : C.brand
+  return (
+    <span style={{
+      display: 'inline-block', width: size, height: size, borderRadius: '50%',
+      background: color, opacity: stopped ? 0.45 : 1, flexShrink: 0,
+      boxShadow: status?.running === true ? `0 0 0 3px color-mix(in srgb, ${C.ok} 25%, transparent)` : undefined,
+    }} />
+  )
+}
+
+/** 插件管理页 summary：一行人物卡。 */
+function PersonCard(): JSX.Element {
+  const status = usePoll(async () => {
+    const resp = await fetch('/dsh-mind/status')
+    return (await resp.json()) as StatusPayload
+  }, 30000)
+  const st = status.data
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, color: C.sub }}>
+      <PresenceDot status={st} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {st !== undefined ? presenceLine(st) : '分身：住在这台 dsh 里的心智'}
+      </span>
+      <span style={{ opacity: 0.7 }}>· 侧边栏「心智」看 TA</span>
+    </span>
+  )
+}
+
+/** 侧边栏在场图标：人形剪影 + 状态点，30s 轻轮询。 */
+function SidebarIcon({ size, active }: { size: number; active: boolean }): JSX.Element {
+  const [status, setStatus] = useState<StatusPayload>()
   useEffect(() => {
     let cancelled = false
-    const load = async (): Promise<void> => {
-      try {
-        const resp = await fetch('/dsh-mind/status')
-        const body = (await resp.json()) as StatusPayload
-        if (!cancelled) {
-          if (body.ok) {
-            setData(body)
-            setError(undefined)
-          } else setError('读取失败')
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-      }
+    const load = (): void => {
+      void fetch('/dsh-mind/status')
+        .then(r => r.json() as Promise<StatusPayload>)
+        .then(b => { if (!cancelled) setStatus(b) })
+        .catch(() => { /* 图标降级为静态 */ })
     }
     void load()
-    const timer = setInterval(() => { void load() }, pollMs)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [pollMs, tick])
-  return { data, error, refresh: () => setTick(t => t + 1) }
-}
-
-async function setStopped(stopped: boolean): Promise<void> {
-  await fetch('/dsh-mind/kill', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ stopped }),
-  })
-}
-
-const fmtTime = (ts: number): string => (ts > 0 ? new Date(ts).toLocaleTimeString() : '—')
-const fmtUsd = (v: number): string => `$${v.toFixed(2)}`
-
-function Page(): JSX.Element {
-  const { data, error, refresh } = useStatus(5000)
-  if (data === undefined) {
-    return <div style={{ padding: 12, color: '#888' }}>{error !== undefined ? `读取失败：${error}` : '读取中…'}</div>
-  }
-  const capped = data.spend.usedUsd >= data.spend.hardCapUsd
-  const soft = !capped && data.spend.usedUsd >= data.spend.softCapUsd
-  const stopped = data.stoppedByMaster || !data.enabled
+    const t = setInterval(load, 30000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
+  const stopped = status !== undefined && (status.stoppedByMaster || !status.enabled)
+  const asleep = status?.quiet?.active === true
+  const color = active
+    ? 'var(--dsw-alias-label-primary, inherit)'
+    : stopped
+      ? 'var(--dsw-alias-label-secondary, #888)'
+      : 'var(--dsw-alias-label-secondary, #aaa)'
+  const dotColor = stopped
+    ? 'var(--dsw-alias-label-secondary, #888)'
+    : asleep
+      ? 'var(--dsw-alias-brand-primary, #4a6fa5)'
+      : 'var(--dsw-alias-state-success-primary, #2A9D8F)'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{
-          padding: '2px 10px', borderRadius: 10,
-          background: stopped ? '#999' : data.running ? '#2A9D8F' : '#4a6fa5',
-          color: '#fff',
-        }}>
-          {stopped ? '已暂停' : data.running ? '思考中' : '待机'}
-        </span>
-        <span>退避档位 L{data.backoffLevel}</span>
-        <span>上次唤醒 {fmtTime(data.lastWakeAt)}</span>
-        <span style={{ color: capped ? '#c0392b' : soft ? '#b8860b' : undefined }}>
-          今日 {fmtUsd(data.spend.usedUsd)} / 硬顶 {fmtUsd(data.spend.hardCapUsd)}{capped ? '（已触顶：自发暂停）' : soft ? '（软顶：快模型）' : ''}
-        </span>
-        <span>待处理 {data.pending}</span>
-        <button
-          type="button"
-          onClick={() => { void setStopped(!stopped).then(refresh) }}
-          style={{ marginLeft: 'auto', padding: '4px 14px', cursor: 'pointer' }}
-        >
-          {stopped ? '▶ 恢复心智' : '⏸ 暂停心智'}
-        </button>
-      </div>
-      <div>
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>时间线（最近）</div>
-        {data.tail.length === 0
-          ? <div style={{ color: '#888' }}>暂无步骤——分身尚未醒来</div>
-          : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {data.tail.slice().reverse().map(step => (
-                <div key={step.seq} style={{ display: 'flex', gap: 8 }}>
-                  <span style={{ color: '#888', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                    {new Date(step.ts).toLocaleTimeString()}
-                  </span>
-                  <span style={{ fontFamily: 'monospace' }}>[{step.type}{step.fn !== undefined ? `:${step.fn}` : ''}]</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{step.content}</span>
-                </div>
-              ))}
-            </div>
-          )}
-      </div>
-    </div>
+    <span style={{ position: 'relative', display: 'inline-flex', width: size, height: size }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+        <circle cx="12" cy="8.2" r="3.6" stroke={color} strokeWidth="2" />
+        <path d="M4.8 20c1.3-3.4 4-5 7.2-5s5.9 1.6 7.2 5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      <span style={{
+        position: 'absolute', right: -1, bottom: -1, width: 7, height: 7, borderRadius: '50%',
+        background: dotColor, border: '1.5px solid var(--dsw-specific-sidebar-fill, transparent)',
+      }} />
+    </span>
   )
 }
 
 export function apply(ctx: ClientContext): void {
+  // 「插件」管理页配置区：summary=人物卡；page=心智主页
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: '@dsh-extra/dsh-mind',
   }, (props: { view: 'summary' | 'page' }) => {
-    if (props.view !== 'page') {
-      return (
-        <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary, #888)' }}>
-          分身心智：持续思考与自主行动的运行时（时间线 / 节奏 / 成本护栏）。
-        </span>
-      )
-    }
-    return <Page />
+    if (props.view !== 'page') return <PersonCard />
+    return <MindPage />
   }))
+
+  // alpha.2 全局面板（特性检测双写，先例 dsh-task-board）：宿主具备 main /
+  // sidebar.panellist 槽位时，心智主页挂为侧边栏一级页面；旧宿主静默跳过。
+  const slots = ctx.slots as ClientContext['slots'] & { spec?: (name: string) => unknown }
+  if (typeof slots.spec !== 'function') return
+  try {
+    const registerNew = slots.register as unknown as (slot: Record<string, unknown>, component: unknown) => void
+    if (slots.spec('main') !== undefined) {
+      ctx.slots.inject('main', () => registerNew({ name: 'main', key: 'mind' }, MindPage))
+    }
+    if (slots.spec('sidebar.panellist') !== undefined) {
+      ctx.slots.inject('sidebar.panellist', () => registerNew(
+        { name: 'sidebar.panellist', id: 'mind', order: 20, label: () => '心智' },
+        (props: { size: number; active: boolean }) => <SidebarIcon size={props.size} active={props.active} />,
+      ))
+    }
+  } catch { /* 新 API 不可用时静默回退插件页形态 */ }
 }
