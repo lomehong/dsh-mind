@@ -13,6 +13,8 @@ export interface WakePromptInputs {
   persona?: string | undefined
   /** 时间线最近步骤（旧→新） */
   tail: ReadonlyArray<TimelineStep>
+  /** 生命概览（分层 recap，P3；缺席→省略区块） */
+  lifeRecap?: string | undefined
   /** 上次唤醒的 FINAL 交接棒 */
   lastFinal?: string | undefined
   /** 记忆召回（dsh-memory 顶层当前条目摘要，最多 8 条） */
@@ -105,6 +107,9 @@ export function buildWakePrompt(inputs: WakePromptInputs): string {
 
   if (inputs.tail.length > 0) {
     sections.push(`## 最近时间线（旧→新）\n\n${inputs.tail.map(formatStepLine).join('\n')}`)
+  }
+  if (inputs.lifeRecap !== undefined && inputs.lifeRecap.trim() !== '') {
+    sections.push(inputs.lifeRecap)
   }
   if (inputs.lastFinal !== undefined && inputs.lastFinal.trim() !== '') {
     sections.push(`## 上次交接棒\n\n${inputs.lastFinal}`)

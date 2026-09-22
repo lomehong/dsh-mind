@@ -38,6 +38,7 @@ await build({
   platform: 'browser',
   target: 'es2022',
   jsx: 'automatic',
+  charset: 'utf8',
   external: EXTERNALS,
   banner: { js: banner },
   footer: { js: footer },

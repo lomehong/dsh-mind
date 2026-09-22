@@ -131,11 +131,20 @@ export function apply(ctx: Context): void {
 
     // readTail 返回新→旧；提示词区块按旧→新叙述
     const tail = readTail(20).steps.slice().reverse()
+    // 生命概览（P3）：全部时间线的分层 recap，有界空间覆盖一生
+    let lifeRecap = ''
+    try {
+      const { readAllSteps, renderLifeRecap } = await import('./recap.ts')
+      lifeRecap = renderLifeRecap(readAllSteps(), cfg)
+    } catch (e) {
+      logger.warn?.('[dsh-mind] 生命概览失败（跳过）:', e instanceof Error ? e.message : String(e))
+    }
     const prompt = buildWakePrompt({
       identityName: '分身',
       guard,
       persona,
       tail,
+      lifeRecap,
       lastFinal: tail.filter(s => s.type === 'wake').at(-1)?.final,
       memories,
       pendingMessages: reactiveQueue.splice(0, reactiveQueue.length).map(q => ({ from: q.from, text: q.text })),
@@ -176,7 +185,8 @@ export function apply(ctx: Context): void {
     return 'think'
   }
 
-  // 启动恢复：上次运行若中断（running 卡住）→ 显式弃单（sre B2）
+  // 启动恢复：上次运行若中断（running 卡住）→ 显式弃单（sre B2）；
+  // 首启播种（wakeAt=0 → 永不触发的新装死锁）：开机 30s 后第一次自发唤醒
   try {
     const state = loadState()
     if (state.running === true) {
@@ -189,6 +199,11 @@ export function apply(ctx: Context): void {
       state.wakeAt = Date.now() + 5000
       saveState(state)
       logger.warn?.('[dsh-mind] 检测到中断的唤醒，已显式弃单')
+    }
+    if (state.wakeAt === 0 && state.stoppedByMaster === false) {
+      state.wakeAt = Date.now() + 30000 // 首启播种：开机 30s 后第一次自发唤醒
+      saveState(state)
+      logger.info?.('[dsh-mind] 首启播种：30s 后第一次自发唤醒')
     }
     const archived = archiveOldSteps(loadMindConfig().timelineRetentionDays)
     if (archived > 0) logger.info?.(`[dsh-mind] 时间线归档 ${archived} 步`)
