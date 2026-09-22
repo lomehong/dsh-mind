@@ -28,7 +28,8 @@ const TICK_MS = 1000
 
 /** 触发源 → 函数菜单结果映射（idle/watchdog 合成唤醒除外）。 */
 function outcomeOf(final: string, toolCalls: number): WakeOutcome {
-  if (/^idle\b/i.test(final.trim())) return 'empty'
+  // FINAL 可能带 [fn] 前缀（提示词要求的输出格式）
+  if (/^\[?\s*idle\b/i.test(final.trim())) return 'empty'
   if (toolCalls > 0) return 'engaged'
   return final.trim().length > 60 ? 'engaged' : 'thought'
 }
@@ -89,10 +90,12 @@ export function apply(ctx: Context): void {
     const gwLike = ctx.get('typertGateway') as TypertGateway | undefined
     if (gwLike === undefined) throw new Error('typertGateway 缺席（宿主服务不可用）')
     const gw = new GatewayClient(gwLike)
+    // 首次唤醒（llmCalls=0）超时加倍：完整预设装配 + 首轮工具链更慢（评审遗留项）
+    const firstWake = state.spend.llmCalls === 0
     const runner = new WakeRunner(gw, {
       presetId: cfg.presetId,
       title: '🧠 mind',
-      timeoutMs: cfg.wakeTimeoutMs,
+      timeoutMs: cfg.wakeTimeoutMs * (firstWake ? 2 : 1),
       resetThresholdTokens: cfg.sessionResetTokens,
     })
 
@@ -152,7 +155,10 @@ export function apply(ctx: Context): void {
     })
 
     const result = await runner.runWake(ensured.sessionId, prompt)
-    const outcome: WakeOutcome = outcomeOf(result.final, result.toolCalls)
+    // 归类：FINAL 的 [fn] 前缀优先（提示词要求的输出格式），剥前缀后入库
+    const fn = fnOf(result.final)
+    const finalText = result.final.replace(/^\[\s*(?:act|share|think|learn|recall|goals|idle)\s*\]\s*/i, '')
+    const outcome: WakeOutcome = outcomeOf(finalText, result.toolCalls)
     const cost = costUsd(cfg, result.tokensIn, result.tokensOut)
 
     // 台账推进（按日清零）+ 时间线 + 退避推进 + 下次排程
@@ -166,8 +172,8 @@ export function apply(ctx: Context): void {
     state.lastSeq += 1
     const wakeStep: TimelineStep = {
       v: 2, seq: state.lastSeq, ts: new Date().toISOString(), type: 'wake', source: 'mind',
-      trigger: trigger.trigger, fn: fnOf(result.final), content: result.final.slice(0, 400),
-      final: result.final, usage: { llmCalls: 1, tokensIn: result.tokensIn, tokensOut: result.tokensOut, costUsd: cost },
+      trigger: trigger.trigger, fn, content: finalText.slice(0, 400),
+      final: finalText, usage: { llmCalls: 1, tokensIn: result.tokensIn, tokensOut: result.tokensOut, costUsd: cost },
       backoffLevel: state.backoffLevel,
     }
     appendStep(wakeStep)

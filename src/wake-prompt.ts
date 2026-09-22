@@ -55,14 +55,18 @@ export const FUNCTION_MENU = `## 本次唤醒：从菜单里选恰好一件事�
 - 最后以一行交接棒结束（见输出格式）：做了什么、剩什么、下一步是什么。`
 
 /** 输出格式说明。 */
-export const OUTPUT_FORMAT = `## 输出格式
+export const OUTPUT_FORMAT = `## 输出格式（必须遵守）
 
-在回复的最后一行写出交接棒（会被记录为本次唤醒的 FINAL，下次唤醒时你自己会读到）：
+在回复的最后一行写出交接棒（会被记录为本次唤醒的 FINAL，下次唤醒时你自己会读到）。
+交接棒**必须以函数标签开头**，便于运行时归类：
 
-FINAL="<一句话：本次做了什么；还剩什么；下一步>"
+FINAL="[act] <一句话：本次做了什么；还剩什么；下一步>"
 
-若本次选择 idle：FINAL="Idle — <一句话原因>"。
-若本次是 share/交付：FINAL="<收件人> 已收到：<一句话内容>。"
+各函数的标签：[act] [share] [think] [learn] [recall] [goals]；idle 写：
+
+FINAL="[idle] Idle — <一句话原因>"
+
+若本次是 share/交付：FINAL="[share] <收件人> 已收到：<一句话内容>。"
 不要输出 FINAL 之外的结尾客套。`
 
 /** 中文消息写作规范（cost-ux 评审对照表：禁 AI 腔）。 */
