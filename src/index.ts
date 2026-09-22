@@ -268,16 +268,28 @@ export function apply(ctx: Context): void {
       running = true
       void runWake(decision)
         .catch((error: unknown) => {
-          // 错误退避：失败按 empty 推进 + 显式 error 步骤（errored run ≠ idle）
+          // 错误退避：失败按 empty 快进 + 显式 error 步骤（errored run ≠ idle）；
+          // 超时错误携带的部分用量照常入台账（token 已计费，不能流失）
           try {
+            const cfgNow = loadMindConfig()
             const s = loadState()
             s.lastSeq += 1
             appendStep({
               v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'error', source: 'mind',
               content: `唤醒失败（${decision.trigger}）：${error instanceof Error ? error.message : String(error)}`,
             })
+            const usage = (error as { usage?: { tokensIn?: number; tokensOut?: number } } | undefined)?.usage
+            const uIn = usage?.tokensIn ?? 0
+            const uOut = usage?.tokensOut ?? 0
+            if (uIn > 0 || uOut > 0) {
+              const today = dayKey(new Date())
+              if (s.spend.date !== today) s.spend = { date: today, usedUsd: 0, tokensIn: 0, tokensOut: 0, llmCalls: 0 }
+              s.spend.tokensIn += uIn
+              s.spend.tokensOut += uOut
+              s.spend.usedUsd += costUsd(cfgNow, uIn, uOut)
+            }
             s.backoffLevel = Math.min(s.backoffLevel + 3, 10) // 错误退避加强：连错快进到大档
-            s.wakeAt = scheduleNextSpontaneous(s, loadMindConfig(), Date.now(), 'empty')
+            s.wakeAt = scheduleNextSpontaneous(s, cfgNow, Date.now(), 'empty')
             s.running = false
             saveState(s)
           } catch { /* 双重失败：等 watchdog */ }

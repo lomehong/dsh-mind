@@ -26,6 +26,8 @@ export function loadState(): SchedulerState {
     const base: SchedulerState = { ...STATE_DEFAULT, ...raw }
     base.spend = { ...STATE_DEFAULT.spend, ...(raw.spend ?? {}) }
     base.reactive = { ...STATE_DEFAULT.reactive, ...(raw.reactive ?? {}) }
+    // pendingApprovals 防护：显式 null/undefined（跨版本/竞态写入）归零
+    base.pendingApprovals = Number(base.pendingApprovals) || 0
     return base
   } catch {
     return {
