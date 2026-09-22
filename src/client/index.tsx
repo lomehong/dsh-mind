@@ -14,7 +14,8 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { presenceLine } from '../narrate.ts'
-import { usePoll, type StatusPayload } from './api.ts'
+import { fetchStatus, usePoll, type StatusPayload } from './api.ts'
+import { Being } from './Being.tsx'
 import { CompanionLayer } from './Companion.tsx'
 import { MindPage } from './MindPage.tsx'
 
@@ -100,14 +101,37 @@ function SidebarIcon({ size, active }: { size: number; active: boolean }): JSX.E
   )
 }
 
+/** 插件详情页（page 视图）：轻量存在卡——完整体验在会话「心智」Tab / 右下角 TA。 */
+function PageCard(): JSX.Element {
+  const status = usePoll(fetchStatus, 30000)
+  const st = status.data
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 4px' }}>
+      <Being size={64} status={st} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>分身</div>
+        <div style={{ fontSize: 12.5, color: 'var(--dsw-alias-label-secondary, #bbb)' }}>
+          {st !== undefined ? presenceLine(st) : '…'}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary, #888)', marginTop: 2 }}>
+          会话顶部「心智」Tab 打开 TA 的房间；右下角也一直有 TA。
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function apply(ctx: ClientContext): void {
-  // 「插件」管理页配置区：summary=人物卡；page=心智主页
+  const warn = (where: string, e: unknown): void => {
+    console.warn(`[dsh-mind] 槽位注册失败（${where}，显式降级）:`, e instanceof Error ? e.message : String(e))
+  }
+  // 「插件」管理页配置区：summary=迷你人物卡；page=轻量存在卡（完整体验在「心智」Tab）
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
     key: '@dsh-extra/dsh-mind',
   }, (props: { view: 'summary' | 'page' }) => {
     if (props.view !== 'page') return <PersonCard />
-    return <MindPage />
+    return <PageCard />
   }))
 
   // conversation.view：当前宿主的一级入口（「心智」Tab，任务看板同款位置）
