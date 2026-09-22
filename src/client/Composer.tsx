@@ -57,8 +57,15 @@ export function Composer({ status, refresh, compact }: { status: StatusPayload |
           placeholder="对 TA 说点什么…（TA 听到就会回应）"
           style={{ flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: 'inherit', fontSize: 13, lineHeight: '20px', maxHeight: 96 }}
         />
-        <button type="button" disabled={text.trim() === '' || sending} onClick={send}
-          style={{ padding: '6px 16px', cursor: 'pointer', borderRadius: 8, border: 'none', color: '#fff', background: 'var(--dsw-alias-brand-primary, #4a6fa5)', opacity: text.trim() === '' || sending ? 0.5 : 1 }}>
+        <button
+          type="button" disabled={text.trim() === '' || sending} onClick={send}
+          style={{
+            padding: '6px 16px', cursor: text.trim() === '' || sending ? 'default' : 'pointer',
+            borderRadius: 8, border: 'none', color: '#06231f', fontWeight: 600,
+            background: text.trim() === '' || sending ? 'rgba(79,179,169,.35)' : 'rgb(79,179,169)',
+            transition: 'background .15s',
+          }}
+        >
           {sending ? '…' : '告诉 TA'}
         </button>
       </div>

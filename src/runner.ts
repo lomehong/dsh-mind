@@ -35,7 +35,9 @@ export class MindWakeTimeoutError extends Error {
 
 interface AssistantMessageData {
   message?: { content?: ReadonlyArray<{ type?: string; text?: string }> }
-  usage?: { input?: number; output?: number }
+  /** 宿主 TokenUsage 形状为 inputTokens/outputTokens（2026-09-22 修复：旧字段
+   *  input/output 不存在导致计量恒 0/0、费用恒 $0.00）；input/output 兼容保留。 */
+  usage?: { inputTokens?: number; outputTokens?: number; input?: number; output?: number }
 }
 
 function textOf(content: ReadonlyArray<{ type?: string; text?: string }> | undefined): string {
@@ -127,8 +129,8 @@ export class WakeRunner {
         const data = e.data as AssistantMessageData
         const text = textOf(data.message?.content)
         if (text.trim() !== '') final = text
-        tokensIn += data.usage?.input ?? 0
-        tokensOut += data.usage?.output ?? 0
+        tokensIn += data.usage?.inputTokens ?? data.usage?.input ?? 0
+        tokensOut += data.usage?.outputTokens ?? data.usage?.output ?? 0
       }
     }
     return { final, toolCalls, tokensIn, tokensOut }
@@ -174,9 +176,9 @@ export class WakeRunner {
       const seq = typeof r.event.seq === 'number' ? r.event.seq : -1
       if (seq >= 0 && seenSeqs.has(seq)) continue
       if (seq >= 0) seenSeqs.add(seq)
-      const data = e.data as { message?: unknown; usage?: { input?: number; output?: number } } | undefined
-      const input = data?.usage?.input ?? 0
-      const output = data?.usage?.output ?? 0
+      const data = e.data as { message?: unknown; usage?: { inputTokens?: number; outputTokens?: number; input?: number; output?: number } } | undefined
+      const input = data?.usage?.inputTokens ?? data?.usage?.input ?? 0
+      const output = data?.usage?.outputTokens ?? data?.usage?.output ?? 0
       if (input > 0 || output > 0) onUsage({ tokensIn: input, tokensOut: output })
     }
     return turnEnd === undefined ? undefined : page
