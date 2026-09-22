@@ -89,11 +89,18 @@ export class WakeRunner {
     const records = (page?.records ?? []).map(r => r.event)
       .filter(e => typeof e.time === 'number' && e.time >= startedAt)
       .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    // 按 turn 号结算：本唤醒认领的 turn = 窗口内 turn/end 之 data.turn。
+    // 持久会话复用下，上一唤醒的尾巴事件也会落进时间窗——只认同 turn 号的事件，
+    // 避免把上一轮的用量/文本错记到本次（2026-09-22 事故：唤醒#2 结算了 turn 1 尾巴）。
+    const turnEnd = records.find(e => e.type === 'turn/end')
+    if (turnEnd === undefined) throw new Error('mind wake run ended without turn/end')
+    const turnNo = (turnEnd.data as { turn?: unknown }).turn
     let toolCalls = 0
     let tokensIn = 0
     let tokensOut = 0
     let final = ''
     for (const e of records) {
+      if ((e.data as { turn?: unknown } | undefined)?.turn !== turnNo) continue
       if (e.type === 'tool/call') toolCalls += 1
       if (e.type === 'assistant/message') {
         const data = e.data as AssistantMessageData

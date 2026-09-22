@@ -28,6 +28,8 @@ export interface SchedulerState {
   cursor?: number
   /** 唤醒 run 进行中（持久化：宿主崩溃后据此识别中断并弃单） */
   running?: boolean
+  /** 自治面被拒的审批数（需主人知晓/批准后心智方可做此类动作） */
+  pendingApprovals: number
 }
 
 export function dayKey(now: Date): string {

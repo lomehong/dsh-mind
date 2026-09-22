@@ -217,6 +217,43 @@ export function apply(ctx: Context): void {
     logger.warn?.('[dsh-mind] 启动恢复失败（不阻断）:', error instanceof Error ? error.message : String(error))
   }
 
+  // 审批自动拒绝（死锁防线，2026-09-22 事故）：心智会话（自治面）发起的需要
+  // 提权/审批的动作一律拒绝——turn 会被拒绝关闭而不是永久等待；拒绝原因写入
+  // 时间线与 pendingApprovals 计数，主人在速览可见、批准后续行。其他会话的
+  // 审批透传（await next），不改变任何裁决。
+  const events = ctx as unknown as {
+    on?: (event: string, handler: (...args: never[]) => unknown) => void
+  }
+  if (typeof events.on === 'function') {
+    events.on('approval/request', async (req: unknown, next: () => Promise<unknown>): Promise<unknown> => {
+      try {
+        const agentId = (req as { agent?: { id?: unknown } } | undefined)?.agent?.id
+        const mindSession = loadState().mindSessionId
+        if (typeof agentId === 'string' && typeof mindSession === 'string' && agentId === mindSession) {
+          const tool = typeof (req as { toolName?: unknown }).toolName === 'string'
+            ? (req as { toolName: string }).toolName
+            : 'tool'
+          const reason = typeof (req as { reason?: unknown }).reason === 'string'
+            ? (req as { reason: string }).reason.slice(0, 160)
+            : ''
+          try {
+            const s = loadState()
+            s.lastSeq += 1
+            s.pendingApprovals += 1
+            appendStep({
+              v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'observation', source: 'mind',
+              content: `自治面审批被拒：${tool}（${reason}）。此类动作需主人批准后经 task_delegate 治理路径执行。`,
+            })
+            saveState(s)
+          } catch { /* 记录失败不影响拒绝 */ }
+          logger.warn?.(`[dsh-mind] 自治面审批已拒（${tool}）——分身应改走 task_delegate 治理路径`)
+          return 'rejected'
+        }
+      } catch { /* 观察者异常不影响审批链 */ }
+      return await next()
+    })
+  }
+
   // 调度 tick（1s；宿主 timer 常驻语义——宿主活着心智就活着，设计 §12.1）
   const tick = setInterval(() => {
     try {
@@ -239,6 +276,7 @@ export function apply(ctx: Context): void {
               v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'error', source: 'mind',
               content: `唤醒失败（${decision.trigger}）：${error instanceof Error ? error.message : String(error)}`,
             })
+            s.backoffLevel = Math.min(s.backoffLevel + 3, 10) // 错误退避加强：连错快进到大档
             s.wakeAt = scheduleNextSpontaneous(s, loadMindConfig(), Date.now(), 'empty')
             s.running = false
             saveState(s)
