@@ -36,10 +36,41 @@ export function dayKey(now: Date): string {
   return now.toISOString().slice(0, 10)
 }
 
-/** 档位 n 的自发唤醒间隔：delay(0)=0；delay(n≥1)=min(base×factor^(n-1), cap)。 */
+/** 档位 n 的自发唤醒间隔：min(base×factor^(n-1), cap)，并夹到自驱地板。
+ *  地板（默认 5 分钟）实现设计 G1「最低 5 分钟一醒」；2026-09-22 成本事故：
+ *  旧实现 L0 立即连转 + 5s 起跳，engaged 归零后实测 15–45s 一拍。 */
 export function nextDelayMs(cfg: MindConfig, level: number): number {
-  if (level <= 0) return 0
-  return Math.min(cfg.backoffBaseMs * Math.pow(cfg.backoffFactor, level - 1), cfg.backoffCapMs)
+  const ladder = level <= 0 ? 0 : Math.min(cfg.backoffBaseMs * Math.pow(cfg.backoffFactor, level - 1), cfg.backoffCapMs)
+  return Math.max(cfg.minSpontaneousIntervalMs, ladder)
+}
+
+/** 机械空醒短路的判定输入。 */
+export interface ShortCircuitInputs {
+  /** 反应性观察在队（对 TA 说话——必须唤起，绝不短路）。 */
+  reactiveQueued: boolean
+  /** 事件触发（task-board 终态/待审批——必须唤起）。 */
+  eventQueued: boolean
+  /** 上次唤醒之后新增的观察类步骤数（message_in/observation/task）。 */
+  newObservations: number
+  /** 上一拍（wake 或机械 idle）也是空转。 */
+  lastWasIdle: boolean
+}
+
+/**
+ * 机械空醒短路（成本闸，2026-09-22 事故引入）：自驱唤醒若「无新观察、无事件、
+ * 无待批、且上一拍亦空转」，则无事可议——不调用模型，直接记 idle 步骤续排。
+ * 反应性/事件触发永不短路（G3：回应人永不限速），配额由调用方保证。
+ */
+export function shouldShortCircuitSpontaneous(
+  cfg: MindConfig,
+  state: SchedulerState,
+  inputs: ShortCircuitInputs,
+): boolean {
+  if (!cfg.idleShortCircuit) return false
+  if (inputs.eventQueued || inputs.reactiveQueued) return false
+  if (inputs.newObservations > 0) return false
+  if (state.pendingApprovals > 0) return false
+  return inputs.lastWasIdle
 }
 
 export type WakeOutcome = 'engaged' | 'thought' | 'empty'

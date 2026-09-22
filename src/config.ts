@@ -24,6 +24,12 @@ export interface MindConfig {
   priceUsdPerMTokOut: number
   reactiveMergeWindowMs: number
   reactiveHourlyMax: number
+  /** 自驱唤醒最低间隔（ms）——设计 G1「最低 5 分钟一醒」的硬地板。
+   *  2026-09-22 成本事故修正：旧实现 delay(0)=0 + 5s 起跳，engaged 归零后
+   *  实测 15–45s 一拍（超设计上限 20 倍），且每拍跑完整 LLM turn。 */
+  minSpontaneousIntervalMs: number
+  /** 机械空醒短路：无新观察/无待办且上一拍亦空转时，不调用模型直接续排。 */
+  idleShortCircuit: boolean
   /** 唤醒 run 硬超时（续命归调度器） */
   wakeTimeoutMs: number
   /** 时间线保留天数（滚动归档） */
@@ -47,6 +53,8 @@ export const CONFIG_DEFAULTS: MindConfig = {
   priceUsdPerMTokOut: 1.1,
   reactiveMergeWindowMs: 60000,
   reactiveHourlyMax: 20,
+  minSpontaneousIntervalMs: 300000,
+  idleShortCircuit: true,
   wakeTimeoutMs: 600000,
   timelineRetentionDays: 180,
   presetId: 'digital-twin',
@@ -86,6 +94,8 @@ export function mergeMindConfig(raw: unknown): MindConfig {
   m.priceUsdPerMTokOut = toNum(r.priceUsdPerMTokOut, m.priceUsdPerMTokOut, 0, 1000)
   m.reactiveMergeWindowMs = toNum(r.reactiveMergeWindowMs, m.reactiveMergeWindowMs, 0, 3600000)
   m.reactiveHourlyMax = toNum(r.reactiveHourlyMax, m.reactiveHourlyMax, 1, 1000)
+  m.minSpontaneousIntervalMs = toNum(r.minSpontaneousIntervalMs, m.minSpontaneousIntervalMs, 30000, 3600000)
+  m.idleShortCircuit = toBool(r.idleShortCircuit, m.idleShortCircuit)
   m.wakeTimeoutMs = toNum(r.wakeTimeoutMs, m.wakeTimeoutMs, 30000, 7200000)
   m.timelineRetentionDays = toNum(r.timelineRetentionDays, m.timelineRetentionDays, 7, 3650)
   if (typeof r.presetId === 'string' && r.presetId !== '') m.presetId = r.presetId

@@ -20,6 +20,12 @@ export interface MindConfig {
     priceUsdPerMTokOut: number;
     reactiveMergeWindowMs: number;
     reactiveHourlyMax: number;
+    /** 自驱唤醒最低间隔（ms）——设计 G1「最低 5 分钟一醒」的硬地板。
+     *  2026-09-22 成本事故修正：旧实现 delay(0)=0 + 5s 起跳，engaged 归零后
+     *  实测 15–45s 一拍（超设计上限 20 倍），且每拍跑完整 LLM turn。 */
+    minSpontaneousIntervalMs: number;
+    /** 机械空醒短路：无新观察/无待办且上一拍亦空转时，不调用模型直接续排。 */
+    idleShortCircuit: boolean;
     /** 唤醒 run 硬超时（续命归调度器） */
     wakeTimeoutMs: number;
     /** 时间线保留天数（滚动归档） */

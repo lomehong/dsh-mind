@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { CONFIG_DEFAULTS, type MindConfig } from '../src/config.ts'
 import {
   advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, evaluateSpend,
-  isQuietHour, nextDelayMs, scheduleNextSpontaneous,
+  isQuietHour, nextDelayMs, scheduleNextSpontaneous, shouldShortCircuitSpontaneous,
   type SchedulerState,
 } from '../src/scheduler.ts'
 
@@ -25,12 +25,20 @@ function state(overrides: Partial<SchedulerState> = {}): SchedulerState {
 const NOON = Date.UTC(2026, 8, 18, 4, 0, 0) // 2026-09-18 12:00 Asia/Shanghai（非静音）
 
 describe('退避阶梯', () => {
-  it('delay(0)=0；delay(n)=min(5s×2^(n-1), 300s)', () => {
-    expect(nextDelayMs(cfg, 0)).toBe(0)
-    expect(nextDelayMs(cfg, 1)).toBe(5000)
-    expect(nextDelayMs(cfg, 2)).toBe(10000)
+  it('自驱地板：默认 5 分钟内不醒（G1「最低 5 分钟一醒」；2026-09-22 成本事故修正）', () => {
+    expect(nextDelayMs(cfg, 0)).toBe(300000)
+    expect(nextDelayMs(cfg, 1)).toBe(300000)
+    expect(nextDelayMs(cfg, 2)).toBe(300000)
     expect(nextDelayMs(cfg, 7)).toBe(300000)
     expect(nextDelayMs(cfg, 20)).toBe(300000)
+  })
+
+  it('地板可配置：调低地板后回到原阶梯（5s×2^(n-1) 夹 cap）', () => {
+    const fast: MindConfig = { ...cfg, minSpontaneousIntervalMs: 5000 }
+    expect(nextDelayMs(fast, 0)).toBe(5000)
+    expect(nextDelayMs(fast, 1)).toBe(5000)
+    expect(nextDelayMs(fast, 2)).toBe(10000)
+    expect(nextDelayMs(fast, 7)).toBe(300000)
   })
 
   it('engaged 归零连转；empty 按 HOLD=3 逐档降', () => {
@@ -49,10 +57,36 @@ describe('退避阶梯', () => {
     expect(l3.emptiesAtLevel).toBe(0)
   })
 
-  it('scheduleNextSpontaneous：engaged 后立即可再醒；empty 后按档位延迟', () => {
+  it('scheduleNextSpontaneous：engaged 后按地板等待；empty 后同样不早于地板', () => {
     const now = 1_000_000
-    expect(scheduleNextSpontaneous(state(), cfg, now, 'engaged')).toBe(now)
-    expect(scheduleNextSpontaneous(state({ backoffLevel: 1 }), cfg, now, 'empty')).toBe(now + 5000)
+    expect(scheduleNextSpontaneous(state(), cfg, now, 'engaged')).toBe(now + 300000)
+    expect(scheduleNextSpontaneous(state({ backoffLevel: 1 }), cfg, now, 'empty')).toBe(now + 300000)
+  })
+})
+
+describe('机械空醒短路（成本闸）', () => {
+  const quiet = { reactiveQueued: false, eventQueued: false, newObservations: 0, lastWasIdle: true }
+
+  it('无新观察、无待办、上一拍亦空转 → 短路（不调用模型）', () => {
+    expect(shouldShortCircuitSpontaneous(cfg, state(), quiet)).toBe(true)
+  })
+
+  it('有新观察 → 不短路（可能有话要说/有事要做）', () => {
+    expect(shouldShortCircuitSpontaneous(cfg, state(), { ...quiet, newObservations: 1 })).toBe(false)
+  })
+
+  it('反应性/事件/待批 → 永不短路（G3：回应人永不限速）', () => {
+    expect(shouldShortCircuitSpontaneous(cfg, state(), { ...quiet, reactiveQueued: true })).toBe(false)
+    expect(shouldShortCircuitSpontaneous(cfg, state(), { ...quiet, eventQueued: true })).toBe(false)
+    expect(shouldShortCircuitSpontaneous(cfg, state({ pendingApprovals: 1 }), quiet)).toBe(false)
+  })
+
+  it('上一拍非空转 → 不短路（连续思考不被截断）', () => {
+    expect(shouldShortCircuitSpontaneous(cfg, state(), { ...quiet, lastWasIdle: false })).toBe(false)
+  })
+
+  it('可配置关闭', () => {
+    expect(shouldShortCircuitSpontaneous({ ...cfg, idleShortCircuit: false }, state(), quiet)).toBe(false)
   })
 })
 

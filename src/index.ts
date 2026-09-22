@@ -14,7 +14,8 @@ import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
 import { WakeRunner } from './runner.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, scheduleNextSpontaneous,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, nextDelayMs, scheduleNextSpontaneous,
+  shouldShortCircuitSpontaneous,
   type SchedulerState, type TriggerDecision, type WakeOutcome,
 } from './scheduler.ts'
 import { loadState, saveState } from './state.ts'
@@ -259,6 +260,28 @@ export function apply(ctx: Context): void {
     })
   }
 
+  /** 机械空醒（成本闸）：不调用模型，记 idle 步骤并按空转推进阶梯。
+   *  2026-09-22 成本事故：空转拍也曾各跑一次完整 LLM turn（实测 ~4.4K tok/次）。 */
+  function mechanicalIdle(): void {
+    try {
+      const cfgNow = loadMindConfig()
+      const s = loadState()
+      s.lastSeq += 1
+      appendStep({
+        v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'idle', source: 'mind',
+        content: '空醒短路：无新观察、无待办，上一拍亦空转——略过本次思考。',
+      })
+      s.lastWakeAt = Date.now()
+      const advanced = advanceAfterWake(s, 'empty', cfgNow)
+      advanced.lastSeq = s.lastSeq
+      advanced.lastWakeAt = s.lastWakeAt
+      advanced.wakeAt = Date.now() + nextDelayMs(cfgNow, advanced.backoffLevel)
+      saveState(advanced)
+    } catch (e) {
+      logger.warn?.('[dsh-mind] 机械空醒失败（不阻断）:', e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // 调度 tick（1s；宿主 timer 常驻语义——宿主活着心智就活着，设计 §12.1）
   const tick = setInterval(() => {
     try {
@@ -270,6 +293,24 @@ export function apply(ctx: Context): void {
         eventQueued: false, // P1 无事件源；P2 接 task-board 事件
       })
       if (!decision.fire) return
+      // 自驱空醒短路：无新事可议时不调用模型（反应性/事件触发永不短路）
+      if (decision.trigger === 'spontaneous') {
+        const tail = readTail(20).steps
+        const lastMoment = tail.find(s => s.type === 'wake' || s.type === 'idle')
+        const lastWasIdle = lastMoment !== undefined && (lastMoment.type === 'idle' || lastMoment.fn === 'idle')
+        const newObservations = tail.filter(s =>
+          (s.type === 'message_in' || s.type === 'observation' || s.type === 'task')
+          && Date.parse(s.ts) > state.lastWakeAt).length
+        if (shouldShortCircuitSpontaneous(cfg, state, {
+          reactiveQueued: reactiveQueue.length > 0,
+          eventQueued: false,
+          newObservations,
+          lastWasIdle,
+        })) {
+          mechanicalIdle()
+          return
+        }
+      }
       running = true
       void runWake(decision)
         .catch((error: unknown) => {
