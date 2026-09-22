@@ -27,7 +27,7 @@ export interface DayGroup {
     /** 天内旧→新。 */
     steps: NarratedStep[];
 }
-/** 新→旧 的步骤流 → 天分组（新天在前，天内旧→新）。 */
+/** 新→旧 的步骤流 → 天分组（新天在前，天内旧→新，连续休息折叠）。 */
 export declare function groupByDay(steps: TimelineStep[], now: Date): DayGroup[];
 export interface PresenceInput {
     enabled: boolean;

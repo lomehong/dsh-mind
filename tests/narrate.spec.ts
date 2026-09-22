@@ -46,6 +46,22 @@ describe('narrateStep', () => {
     expect(n.kind).toBe('moment')
     expect(n.body).toBe('hi')
   })
+
+  it('wake 文本形态 idle（fn 被误记 think 的历史数据）→ rest', () => {
+    const idleText = '本拍 idle：定时器未到，无变化。\n\nFINAL="[idle] Idle — 定时器未到，继续等待。"'
+    const n = narrateStep(step({ type: 'wake', fn: 'think', trigger: 'spontaneous', content: idleText, final: idleText }))
+    expect(n.kind).toBe('rest')
+    expect(n.title).toBe('我歇了一会儿')
+  })
+
+  it('用量 0/0（计量缺失）不渲染假 detail', () => {
+    const n = narrateStep(step({
+      type: 'wake', fn: 'act', trigger: 'spontaneous', content: '干活', final: '[act] 干了件活',
+      usage: { llmCalls: 1, tokensIn: 0, tokensOut: 0, costUsd: 0 },
+    }))
+    expect(n.kind).toBe('moment')
+    expect(n.detail).toBe('spontaneous')
+  })
 })
 
 describe('groupByDay', () => {
@@ -65,6 +81,21 @@ describe('groupByDay', () => {
     const groups = groupByDay([step({ seq: 1, ts: '2025-12-31T20:00:00.000Z' })], now)
     expect(groups[0]!.label).toContain('2025')
     expect(groups[0]!.label).toContain('月')
+  })
+
+  it('连续休息折叠为一条（带次数）', () => {
+    const idle = (seq: number, ts: string): TimelineStep => step({ seq, ts, type: 'wake', fn: 'idle', content: '', final: '[idle] 无事' })
+    const groups = groupByDay([
+      idle(5, '2026-09-20T10:05:00.000Z'),
+      idle(4, '2026-09-20T10:04:00.000Z'),
+      idle(3, '2026-09-20T10:03:00.000Z'),
+      step({ seq: 2, ts: '2026-09-20T10:00:00.000Z', type: 'wake', fn: 'act', content: '干活', final: '[act] 干了活' }),
+    ], new Date('2026-09-20T12:00:00.000Z'))
+    const todaySteps = groups[0]!.steps
+    const rests = todaySteps.filter(s => s.kind === 'rest')
+    expect(rests).toHaveLength(1)
+    expect(rests[0]!.title).toContain('3 次空醒')
+    expect(todaySteps[0]!.kind).toBe('moment')
   })
 })
 

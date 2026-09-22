@@ -32,6 +32,14 @@ const FN_LABELS: Record<string, string> = {
   idle: '我歇了一会儿',
 }
 
+/** idle 空醒识别：fn 字段或文本形态任一命中（历史数据 fn 可能被误记为 think）。 */
+function isIdleWake(s: TimelineStep): boolean {
+  if (s.type !== 'wake') return false
+  if (s.fn === 'idle') return true
+  const text = `${s.final ?? ''}\n${s.content}`
+  return /(^|\n)\s*本拍\s*idle|FINAL\s*=\s*"?\[idle\]|^\[?\s*idle\b|Idle\s*—/i.test(text)
+}
+
 /** 单步 → 叙事。未知类型回落为 moment（保守呈现，不丢内容）。 */
 export function narrateStep(s: TimelineStep): NarratedStep {
   const base = { seq: s.seq, ts: s.ts }
@@ -42,20 +50,24 @@ export function narrateStep(s: TimelineStep): NarratedStep {
     case 'message_out':
       return { ...base, kind: 'mind', title: '我对你说', body: clip(s.content) }
     case 'wake': {
-      const fn = s.fn ?? 'think'
-      if (fn === 'idle') {
+      if (isIdleWake(s)) {
         return { ...base, kind: 'rest', title: FN_LABELS.idle!, tone: 'subtle' }
       }
+      const fn = s.fn ?? 'think'
       const label = FN_LABELS[fn] ?? '我在想'
       const parts: string[] = []
       if (s.trigger !== undefined) parts.push(s.trigger)
-      if (s.usage !== undefined) parts.push(`${s.usage.tokensIn}/${s.usage.tokensOut} tok · $${s.usage.costUsd.toFixed(4)}`)
+      // 用量 0/0 是计量缺失而非真实花费——不渲染假数据（runner 计量修复前防噪）
+      if (s.usage !== undefined && (s.usage.tokensIn > 0 || s.usage.tokensOut > 0)) {
+        parts.push(`${s.usage.tokensIn}/${s.usage.tokensOut} tok · $${s.usage.costUsd.toFixed(4)}`)
+      }
+      const detail = parts.length > 0 ? parts.join(' · ') : undefined
       return {
         ...base,
         kind: 'moment',
         title: `${label}…`,
         body: clip(s.final ?? s.content),
-        ...(parts.length > 0 ? { detail: parts.join(' · ') } : {}),
+        ...(detail !== undefined ? { detail } : {}),
       }
     }
     case 'thought':
@@ -82,7 +94,22 @@ export interface DayGroup {
 
 const dayKeyOf = (ts: string): string => ts.slice(0, 10)
 
-/** 新→旧 的步骤流 → 天分组（新天在前，天内旧→新）。 */
+/** 折叠连续的休息步：人不会每分钟写一篇一模一样的空日记（设计 §12.1 idle 折叠纪律）。 */
+function coalesceRests(steps: NarratedStep[]): NarratedStep[] {
+  const out: NarratedStep[] = []
+  for (const step of steps) {
+    const last = out[out.length - 1]
+    if (step.kind === 'rest' && last !== undefined && last.kind === 'rest') {
+      const count = Number(/（(\d+) 次空醒）$/.exec(last.title)?.[1] ?? 1) + 1
+      out[out.length - 1] = { ...last, seq: step.seq, title: count > 1 ? `我歇了一会儿（${count} 次空醒）` : '我歇了一会儿' }
+      continue
+    }
+    out.push(step)
+  }
+  return out
+}
+
+/** 新→旧 的步骤流 → 天分组（新天在前，天内旧→新，连续休息折叠）。 */
 export function groupByDay(steps: TimelineStep[], now: Date): DayGroup[] {
   const today = dayKeyOf(now.toISOString())
   const yesterday = dayKeyOf(new Date(now.getTime() - 86400000).toISOString())
@@ -98,6 +125,7 @@ export function groupByDay(steps: TimelineStep[], now: Date): DayGroup[] {
     }
     current.steps.push(narrateStep(step))
   }
+  for (const g of groups) g.steps = coalesceRests(g.steps)
   return groups
 }
 

@@ -158,10 +158,11 @@ export function apply(ctx: Context): void {
     })
 
     const result = await runner.runWake(ensured.sessionId, prompt)
-    // 归类：FINAL 的 [fn] 前缀优先（提示词要求的输出格式），剥前缀后入库
+    // 归类：[fn] 标记可能在 FINAL="..." 内（模型先自由叙述再给 FINAL 行），
+    // 全文搜首个标记；idle 优先按 fn 判定——误判 think 会让退避永不生长（v0.2.1 实测事故）
     const fn = fnOf(result.final)
     const finalText = result.final.replace(/^\[\s*(?:act|share|think|learn|recall|goals|idle)\s*\]\s*/i, '')
-    const outcome: WakeOutcome = outcomeOf(finalText, result.toolCalls)
+    const outcome: WakeOutcome = fn === 'idle' ? 'empty' : outcomeOf(finalText, result.toolCalls)
     const cost = costUsd(cfg, result.tokensIn, result.tokensOut)
 
     // 台账推进（按日清零）+ 时间线 + 退避推进 + 下次排程
@@ -188,9 +189,10 @@ export function apply(ctx: Context): void {
   }
 
   function fnOf(final: string): NonNullable<TimelineStep['fn']> {
-    const m = final.trim().match(/^\[(act|share|think|learn|recall|goals|idle)\]/i)
+    // 标记可能在文本中部（FINAL="..." 内），全文搜首个；找不到再看 idle 文本形态
+    const m = final.match(/\[(act|share|think|learn|recall|goals|idle)\]/i)
     if (m !== null) return m[1]!.toLowerCase() as NonNullable<TimelineStep['fn']>
-    if (/^idle\b/i.test(final.trim())) return 'idle'
+    if (/^idle\b/i.test(final.trim()) || /本拍\s*idle/i.test(final)) return 'idle'
     return 'think'
   }
 
