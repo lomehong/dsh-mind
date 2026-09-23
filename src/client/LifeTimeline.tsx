@@ -225,24 +225,22 @@ export function LifeTimeline(): JSX.Element {
             const h = Math.max(2, (b.idle / maxIdle) * 26)
             return <rect key={`i${b.start}`} x={x} y={AXIS_Y - h} width={w} height={h} rx={1.5} fill='rgba(128,128,128,.16)' />
           })}
-          {/* 有效活动节点 */}
+          {/* 有效活动节点（直方图柱：柱位=桶区间，柱高=活动数——消除位置歧义） */}
           {bucketList.filter(b => b.total > 0).map(b => {
-            const cx = Math.min(width - 6, Math.max(6, msToX(b.start) + (msToX(b.end) - msToX(b.start)) / 2))
-            const r = b.total === 1 ? 4 : Math.min(11, 4.5 + Math.sqrt(b.total) * 1.3)
-            const y = AXIS_Y - 30
+            const x = msToX(b.start) + 1
+            const w = Math.max(2, msToX(b.end) - msToX(b.start) - 2)
+            const h = Math.min(96, 6 + Math.sqrt(b.total) * 11)
+            const y = AXIS_Y - h
             const dense = b.total > DENSE_BUCKET || level !== 'hour'
             return (
               <g key={`n${b.start}`} style={{ cursor: 'pointer' }}
-                onMouseEnter={(e: React.MouseEvent) => { (e.currentTarget as SVGGElement).querySelector('circle')?.setAttribute('stroke-width', '2.5') }}
-                onMouseLeave={(e: React.MouseEvent) => { (e.currentTarget as SVGGElement).querySelector('circle')?.setAttribute('stroke-width', '1.5') }}
+                onMouseEnter={(e: React.MouseEvent) => { (e.currentTarget as SVGGElement).querySelector('rect')?.setAttribute('opacity', '1') }}
+                onMouseLeave={(e: React.MouseEvent) => { (e.currentTarget as SVGGElement).querySelector('rect')?.setAttribute('opacity', '0.82') }}
                 onClick={() => onNodeClick(b)}
               >
-                <title>{`${new Date(b.start).toLocaleString('zh-CN')} · ${b.total} 件活动${b.idle > 0 ? `（另有 ${b.idle} 次心跳）` : ''}${dense ? ' · 点击下钻' : ' · 点击看详情'}`}</title>
-                <circle cx={cx} cy={y} r={r} fill={`color-mix(in srgb, ${b.color} 78%, transparent)`} stroke='var(--dsw-alias-bg-layer-1, #222)' strokeWidth={1.5} />
-                {b.total > 1 && (
-                  <text x={cx} y={y + 3.5} textAnchor='middle' fontSize={9} fill='#fff' fontWeight={600}>{b.total > 99 ? '99+' : b.total}</text>
-                )}
-                <text x={cx} y={y - r - 5} textAnchor='middle' fontSize={9.5} fill={SUB}>{b.color === ERR ? '!' : ''}</text>
+                <title>{`${new Date(b.start).toLocaleString('zh-CN')} 起的${level === 'hour' ? '一小时' : '一段'} · ${b.total} 件活动${b.idle > 0 ? `（另有 ${b.idle} 次心跳）` : ''}${dense ? ' · 点击下钻' : ' · 点击看详情'}`}</title>
+                <rect x={x} y={y} width={w} height={h} rx={3} fill={b.color} opacity={0.82} />
+                <text x={x + w / 2} y={y - 4} textAnchor='middle' fontSize={9.5} fill={SUB} fontWeight={600}>{b.total > 99 ? '99+' : b.total}</text>
               </g>
             )
           })}
