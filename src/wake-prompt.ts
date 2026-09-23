@@ -21,6 +21,8 @@ export interface WakePromptInputs {
   memories?: ReadonlyArray<string> | undefined
   /** 待处理的 reactive 消息（渠道注入的人的话） */
   pendingMessages?: ReadonlyArray<{ from: string; text: string }> | undefined
+  /** 久悬未结清的主人消息（P2.1 承诺账：>24h 升级为提醒） */
+  stalePendings?: ReadonlyArray<{ ageHours: number; text: string }> | undefined
   now: Date
 }
 
@@ -134,6 +136,11 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   if (inputs.pendingMessages !== undefined && inputs.pendingMessages.length > 0) {
     const lines = inputs.pendingMessages.map(m => `- 来自 ${m.from}：${m.text.length > 300 ? `${m.text.slice(0, 297)}…` : m.text}`)
     sections.push(`## 待处理消息（压倒菜单，优先 act）\n\n${lines.join('\n')}`)
+  }
+
+  if (inputs.stalePendings !== undefined && inputs.stalePendings.length > 0) {
+    const lines = inputs.stalePendings.map(p => `- 悬置 ${p.ageHours} 小时：「${p.text}」——要么本轮处理，要么追加一条 thought 明说放下（说了就要算数）`)
+    sections.push(`## 悬置提醒（久未结清的主人消息）\n\n${lines.join('\n')}`)
   }
 
   if (inputs.tail.length > 0) {

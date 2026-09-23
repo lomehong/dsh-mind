@@ -16,12 +16,17 @@
 - gateway.ts — typertGateway 封装（契约照搬 dsh-task-board）
 - runner.ts — 唤醒执行器（会话懒建复用/超阈值重建、follow→cursor→page 轮询 turn/end、
   FINAL 与用量抽取）
-- panel-api.ts — HTTP 面（sameOrigin + 写门禁键）：status v3 / timeline / say / kill / token
+- panel-api.ts — HTTP 面（sameOrigin + 写门禁键）：status v3 / timeline / say / kill / token / prompts（GET+POST 覆盖层）
+- prompts.ts — 提示词覆盖层（四块：菜单/守则/输出格式/写作规范；缺省键=内置默认）
+- channels.ts — 渠道注册表（§6：registerChannel/deliver；share 产出经此投递到人）
+- pendings.ts — P2.1 承诺账纯函数（入账封顶/act-share 出手清账/久悬升级提醒）
+- rollups.ts — P3.2 LLM 摘要存储（rollups.jsonl）+ 跨度选择 + 卷积提示词
+- summarizer.ts — 低配会话摘要器（独立于心智主会话；失败静默，机械 recap 兜底）
 - narrate.ts — 叙事纯函数层：时间线步骤 → 第一人称生活语言（机器语义→人的语义，测试覆盖）
 - client/index.tsx — 三挂点：插件页人物卡（summary）+ 心智主页（main key='mind'，特性检测双写）+ 侧边栏在场图标
-- client/MindPage.tsx — 心智主页：在场感头部/生活流/留言闭环/照护抽屉/工程视图切换
-- client/EngView.tsx / api.ts / format.tsx — 工程视图（原五区块）/轮询与写门禁/格式化
-- tests/ — vitest（scheduler/timeline/config/wake-prompt/narrate；时钟与 DSH_HOME 注入隔离）
+- client/MindPage.tsx — 心智主页：存在体 + 工程视图切换（说话/生活流/照看在右下角常驻存在体，不重复）
+- client/EngView.tsx / PromptsEditor.tsx / api.ts / format.tsx — 工程视图（指标+提示词调教+时间线）/提示词编辑器/轮询与写门禁/格式化
+- tests/ — vitest（scheduler/timeline/config/wake-prompt/narrate/rollups-pending；时钟与 DSH_HOME 注入隔离）
 
 ## 红线
 - 改动前先读套件宪章（`E:\code\nodejs\dsh\docs\suite-charter.md`）与设计稿 v0.3

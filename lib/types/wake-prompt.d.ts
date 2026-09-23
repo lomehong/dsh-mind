@@ -23,6 +23,11 @@ export interface WakePromptInputs {
         from: string;
         text: string;
     }> | undefined;
+    /** 久悬未结清的主人消息（P2.1 承诺账：>24h 升级为提醒） */
+    stalePendings?: ReadonlyArray<{
+        ageHours: number;
+        text: string;
+    }> | undefined;
     now: Date;
 }
 export declare const FALLBACK_GUARD: string;

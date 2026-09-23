@@ -21,9 +21,15 @@ export declare function rollupSpan(steps: ReadonlyArray<TimelineStep>): RollupEn
 /** 层级线（tier k 的全部聚合，几何粗化；纯函数）。 */
 export declare function recapTiers(steps: ReadonlyArray<TimelineStep>, fanout?: number): RollupEntry[][];
 /**
- * 生命概览（唤醒上下文用）：全部时间线的分层线 + 尾部明细由 readTail 承担。
- * 有界空间覆盖一生：层数 ⌈log_F N⌉，总条目 ∝ log(N)。
+ * 生命概览（唤醒上下文用）：LLM 语义摘要（有则优先）+ 全部时间线的机械分层线；
+ * 尾部明细由 readTail 承担。有界空间覆盖一生：层数 ⌈log_F N⌉，总条目 ∝ log(N)。
  */
-export declare function renderLifeRecap(steps: ReadonlyArray<TimelineStep>, cfg: MindConfig, fanout?: number): string;
+export declare function renderLifeRecap(steps: ReadonlyArray<TimelineStep>, cfg: MindConfig, fanout?: number, rollups?: ReadonlyArray<{
+    ts: string;
+    refs: {
+        steps: [number, number];
+    };
+    text: string;
+}>): string;
 /** 从磁盘读全量时间线步骤（recap 用；体量大时 P3+ 换分段存储）。 */
 export declare function readAllSteps(): TimelineStep[];

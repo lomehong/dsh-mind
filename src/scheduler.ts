@@ -30,7 +30,18 @@ export interface SchedulerState {
   running?: boolean
   /** 自治面被拒的审批数（需主人知晓/批准后心智方可做此类动作） */
   pendingApprovals: number
+  /** 自驱 LLM 卷积游标：≤ 此 seq 的时间线步骤已生成 LLM 摘要（P3.2） */
+  lastRolledUpSeq?: number
+  /** 摘要器会话（懒建复用；低配预设，独立于心智主会话） */
+  summarizerSessionId?: string
+  /** 未结清的主人消息（P2.1 承诺账：act/share 完成即清账，超时进唤醒提醒） */
+  openPendings: Array<{ seq: number; ts: string; text: string }>
+  /** 连续机械空醒计数（密度治理：每 IDLE_STEP_EVERY 拍才落一条 idle 步骤） */
+  idleStreak: number
 }
+
+/** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
+export const IDLE_STEP_EVERY = 6
 
 export function dayKey(now: Date): string {
   return now.toISOString().slice(0, 10)

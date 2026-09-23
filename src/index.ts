@@ -14,8 +14,11 @@ import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
 import { WakeRunner } from './runner.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
+import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
+import { readRollups } from './rollups.ts'
+import { tryRollup } from './summarizer.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, nextDelayMs, scheduleNextSpontaneous,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, IDLE_STEP_EVERY, nextDelayMs, scheduleNextSpontaneous,
   shouldShortCircuitSpontaneous,
   type SchedulerState, type TriggerDecision, type WakeOutcome,
 } from './scheduler.ts'
@@ -140,11 +143,11 @@ export function apply(ctx: Context): void {
 
     // readTail 返回新→旧；提示词区块按旧→新叙述
     const tail = readTail(20).steps.slice().reverse()
-    // 生命概览（P3）：全部时间线的分层 recap，有界空间覆盖一生
+    // 生命概览（P3/P3.2）：LLM 语义摘要（有则优先）+ 机械分层，有界空间覆盖一生
     let lifeRecap = ''
     try {
-      const { readAllSteps, renderLifeRecap } = await import('./recap.ts')
-      lifeRecap = renderLifeRecap(readAllSteps(), cfg)
+      const { readAllSteps, renderLifeRecap, RECAP_FANOUT } = await import('./recap.ts')
+      lifeRecap = renderLifeRecap(readAllSteps(), cfg, RECAP_FANOUT, readRollups(8))
     } catch (e) {
       logger.warn?.('[dsh-mind] 生命概览失败（跳过）:', e instanceof Error ? e.message : String(e))
     }
@@ -159,6 +162,7 @@ export function apply(ctx: Context): void {
       lastFinal: tail.filter(s => s.type === 'wake').at(-1)?.final,
       memories,
       pendingMessages: reactiveQueue.splice(0, reactiveQueue.length).map(q => ({ from: q.from, text: q.text })),
+      stalePendings: stalePendings(loadState().openPendings, now.getTime()),
       now,
     }, blocks)
 
@@ -186,11 +190,22 @@ export function apply(ctx: Context): void {
       backoffLevel: state.backoffLevel,
     }
     appendStep(wakeStep)
+    // P2.1 承诺账：act/share（或真动了工具）= 对唤醒前挂起的主人消息出手 → 清账
+    if (fn === 'act' || fn === 'share' || result.toolCalls > 0) {
+      state.openPendings = resolvePendingsBefore(state.openPendings, now.toISOString())
+    }
+    state.idleStreak = 0 // 真实唤醒打断机械空醒连拍
     state.wakeAt = scheduleNextSpontaneous(state, cfg, Date.now(), outcome)
     state = advanceAfterWake(state, outcome, cfg)
     state.running = false
     saveState(state)
     logger.info?.(`[dsh-mind] 唤醒完成 fn=${wakeStep.fn} outcome=${outcome} cost=$${cost.toFixed(4)}`)
+
+    // P3.2 记忆卷积：凑满 F 条未摘要步骤才真正调用（异步尽力而为，失败静默——
+    // 机械 recap 兜底，绝不因摘要失败影响唤醒主流程）
+    void tryRollup({ gateway: gwLike, presetId: cfg.presetId })
+      .then(r => { if (!r.ok && r.reason !== undefined && r.reason !== 'not-due') logger.warn?.(`[dsh-mind] 卷积跳过: ${r.reason}`) })
+      .catch(() => { /* 静默 */ })
 
     // share 投递：经注册渠道送达（对齐「渠道=终端」——右下角/IM 都是出口）。
     // 全失败/无渠道 → 仅时间线留痕，不重试不阻塞（下拍复盘可再提）。
@@ -280,15 +295,22 @@ export function apply(ctx: Context): void {
     try {
       const cfgNow = loadMindConfig()
       const s = loadState()
+      // 密度治理：连续机械空醒每 IDLE_STEP_EVERY 拍才落一条 idle 步骤
+      // （5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳），其余拍静默续排
       s.lastSeq += 1
-      appendStep({
-        v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'idle', source: 'mind',
-        content: '空醒短路：无新观察、无待办，上一拍亦空转——略过本次思考。',
-      })
+      const streak = (Number(s.idleStreak) || 0) + 1
+      s.idleStreak = streak
+      if (streak % IDLE_STEP_EVERY === 0) {
+        appendStep({
+          v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'idle', source: 'mind',
+          content: `空醒短路：无新观察、无待办，上一拍亦空转——略过本次思考。（连续空醒 ${streak} 拍）`,
+        })
+      }
       s.lastWakeAt = Date.now()
       const advanced = advanceAfterWake(s, 'empty', cfgNow)
       advanced.lastSeq = s.lastSeq
       advanced.lastWakeAt = s.lastWakeAt
+      advanced.idleStreak = s.idleStreak
       advanced.wakeAt = Date.now() + nextDelayMs(cfgNow, advanced.backoffLevel)
       saveState(advanced)
     } catch (e) {
@@ -392,6 +414,10 @@ export function apply(ctx: Context): void {
       const cfg = loadMindConfig()
       const state = loadState()
       const now = Date.now()
+      // P2.1 承诺账：主人的话先入账（act/share 出手即清；超 24h 升级为唤醒提醒）
+      state.openPendings = pushPending(state.openPendings, {
+        seq: state.lastSeq, ts: new Date(now).toISOString(), text: text.slice(0, 200),
+      })
       // 合并窗口 + 小时上限（§5.3）：窗口内并入队尾文本，超额只并入不新增触发
       if (now - state.reactive.windowStart > cfg.reactiveMergeWindowMs) {
         state.reactive = { windowStart: now, count: 1 }

@@ -117,21 +117,35 @@ function formatTierLine(tierIndex: number, entry: RollupEntry): string {
 }
 
 /**
- * 生命概览（唤醒上下文用）：全部时间线的分层线 + 尾部明细由 readTail 承担。
- * 有界空间覆盖一生：层数 ⌈log_F N⌉，总条目 ∝ log(N)。
+ * 生命概览（唤醒上下文用）：LLM 语义摘要（有则优先）+ 全部时间线的机械分层线；
+ * 尾部明细由 readTail 承担。有界空间覆盖一生：层数 ⌈log_F N⌉，总条目 ∝ log(N)。
  */
-export function renderLifeRecap(steps: ReadonlyArray<TimelineStep>, cfg: MindConfig, fanout = RECAP_FANOUT): string {
-  if (steps.length < fanout) return '' // 不足一层：尾部明细已覆盖，零成本
-  const tiers = recapTiers(steps, fanout)
-  const lines: string[] = [`## 生命概览（全部 ${steps.length} 步，分层分辨率随年龄递减；细读用时间线工具）`]
-  // 从最粗层到最细层取摘要线；条目超 12 行时均匀采样（保持粗层全量优先）
-  const flat: Array<{ tier: number; entry: RollupEntry }> = []
-  tiers.forEach((tier, ti) => { for (const entry of tier) flat.push({ tier: ti, entry }) })
-  const maxLines = 12
-  const picked = flat.length <= maxLines
-    ? flat
-    : flat.filter((_, i) => i % Math.ceil(flat.length / maxLines) === 0)
-  for (const { tier, entry } of picked) lines.push(formatTierLine(tier, entry))
+export function renderLifeRecap(
+  steps: ReadonlyArray<TimelineStep>,
+  cfg: MindConfig,
+  fanout = RECAP_FANOUT,
+  rollups?: ReadonlyArray<{ ts: string; refs: { steps: [number, number] }; text: string }>,
+): string {
+  const lines: string[] = []
+  const total = steps.length
+  if (total < fanout && (rollups === undefined || rollups.length === 0)) return '' // 不足一层：尾部明细已覆盖，零成本
+  lines.push(`## 生命概览（全部 ${total} 步，分层分辨率随年龄递减；细读用时间线工具）`)
+  // LLM 语义摘要（新→旧，最多 8 条）——每条只覆盖 refs.steps 区间的原始步骤
+  for (const r of rollups ?? []) {
+    const from = r.ts.slice(5, 16).replace('T', ' ')
+    lines.push(`- 摘要（至 ${from}，#L${r.refs.steps[0]}~${r.refs.steps[1]}）：${r.text}`)
+  }
+  if (total >= fanout) {
+    const tiers = recapTiers(steps, fanout)
+    // 从最粗层到最细层取摘要线；条目超 12 行时均匀采样（保持粗层全量优先）
+    const flat: Array<{ tier: number; entry: RollupEntry }> = []
+    tiers.forEach((tier, ti) => { for (const entry of tier) flat.push({ tier: ti, entry }) })
+    const maxLines = 12
+    const picked = flat.length <= maxLines
+      ? flat
+      : flat.filter((_, i) => i % Math.ceil(flat.length / maxLines) === 0)
+    for (const { tier, entry } of picked) lines.push(formatTierLine(tier, entry))
+  }
   return lines.join('\n')
 }
 

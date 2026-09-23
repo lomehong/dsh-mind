@@ -12,6 +12,8 @@ export const STATE_DEFAULT: SchedulerState = {
   stoppedByMaster: false,
   lastSeq: 0,
   pendingApprovals: 0,
+  openPendings: [],
+  idleStreak: 0,
   spend: { date: '1970-01-01', usedUsd: 0, tokensIn: 0, tokensOut: 0, llmCalls: 0 },
   reactive: { windowStart: 0, count: 0 },
 }
@@ -28,12 +30,22 @@ export function loadState(): SchedulerState {
     base.reactive = { ...STATE_DEFAULT.reactive, ...(raw.reactive ?? {}) }
     // pendingApprovals 防护：显式 null/undefined（跨版本/竞态写入）归零
     base.pendingApprovals = Number(base.pendingApprovals) || 0
+    base.idleStreak = Number(base.idleStreak) || 0
+    // openPendings 防护：非数组/坏条目丢弃（承诺账宁缺毋错）
+    base.openPendings = Array.isArray(base.openPendings)
+      ? base.openPendings.filter(p =>
+        p !== null && typeof p === 'object'
+        && typeof (p as { seq?: unknown }).seq === 'number'
+        && typeof (p as { ts?: unknown }).ts === 'string'
+        && typeof (p as { text?: unknown }).text === 'string')
+      : []
     return base
   } catch {
     return {
       ...STATE_DEFAULT,
       spend: { ...STATE_DEFAULT.spend },
       reactive: { ...STATE_DEFAULT.reactive },
+      openPendings: [],
     }
   }
 }
