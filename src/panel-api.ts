@@ -18,7 +18,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { MindConfig } from './config.ts'
 import { evaluateSpend, isQuietHour } from './scheduler.ts'
 import type { SchedulerState } from './scheduler.ts'
-import { readTail, type TimelineStep } from './timeline.ts'
+import { readTail, paginateSteps, type TimelineStep } from './timeline.ts'
 import { buildWakePrompt, DEFAULT_PROMPT_BLOCKS } from './wake-prompt.ts'
 import { loadPromptOverrides, PROMPT_BLOCK_KEYS, PROMPT_BLOCK_LABELS, resolveWakePromptBlocks, savePromptOverrides } from './prompts.ts'
 
@@ -33,6 +33,8 @@ export interface PanelDeps {
   pendingApprovals(): number
   /** 主人留言：message_in 落时间线 + 反应性唤醒。 */
   say(text: string): void
+  /** P4 goals 精化：当前活跃目标（读侧提取自 dsh-memory [目标] 标记条目）。 */
+  activeGoals(): Array<{ title: string; ts: string }>
 }
 
 /** 写门禁键：每次进程启动随机生成，不落盘（重启即换；先例 dsh-memory）。 */
@@ -193,8 +195,22 @@ export function registerPanelApi(
       if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method not allowed' })
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
       const n = Math.min(200, Math.max(1, Number(url.searchParams.get('n') ?? 50) || 50))
-      const steps: TimelineStep[] = readTail(n).steps
-      json(res, 200, { ok: true, steps })
+      const beforeRaw = url.searchParams.get('beforeSeq')
+      const beforeNum = beforeRaw !== null && beforeRaw !== '' ? Number(beforeRaw) : undefined
+      const all = readTail(200).steps
+      const steps = paginateSteps(all, n, Number.isFinite(beforeNum) ? beforeNum : undefined)
+      json(res, 200, { ok: true, steps, hasMore: steps.length === n })
+    },
+  })
+
+  // goals 精化（P4）：活跃目标清单（读侧提取自 dsh-memory [目标] 标记条目）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-mind/goals',
+    handler: (req, res) => {
+      if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
+      if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method not allowed' })
+      json(res, 200, { ok: true, goals: deps.activeGoals() })
     },
   })
 

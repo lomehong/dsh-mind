@@ -14,6 +14,7 @@ import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
 import { WakeRunner } from './runner.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
+import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
 import { readRollups } from './rollups.ts'
 import { tryRollup } from './summarizer.ts'
@@ -49,6 +50,28 @@ export function apply(ctx: Context): void {
   /** reactive 观察队列（P1 无渠道注入源；P2 由适配器喂入）。 */
   const reactiveQueue: Array<{ from: string; text: string }> = []
 
+  /** 读记忆条目（dsh-memory 服务面；缺席→空）。 */
+  function readMemoryEntries(): Array<{ content: string; ts?: string; seq?: number }> {
+    try {
+      const memory = ctx.get('dsh-memory') as
+        | { loadSharedMemory?(): Array<{ content: string }>; filterMemoriesForRead?(e: unknown[]): unknown[] }
+        | undefined
+      if (memory?.loadSharedMemory === undefined) return []
+      const entries = memory.filterMemoriesForRead !== undefined
+        ? memory.filterMemoriesForRead(memory.loadSharedMemory())
+        : memory.loadSharedMemory()
+      return entries as Array<{ content: string; ts?: string; seq?: number }>
+    } catch {
+      return []
+    }
+  }
+
+  /** P4 goals 精化：当前活跃目标（[目标] 标记 − 已结清同题）。 */
+  function readActiveGoals(): Array<{ title: string; ts: string }> {
+    const entries = readMemoryEntries()
+    return settleGoals(extractGoalEntries(entries), entries).slice(-5)
+  }
+
   const deps = {
     getConfig: (): MindConfig => loadMindConfig(),
     getState: (): SchedulerState => loadState(),
@@ -67,6 +90,7 @@ export function apply(ctx: Context): void {
     reactiveQueued: (): number => reactiveQueue.length,
     pendingApprovals: (): number => loadState().pendingApprovals ?? 0,
     say: (text: string): void => injectObservation('主人', text, { source: 'web' }),
+    activeGoals: (): Array<{ title: string; ts: string }> => readActiveGoals(),
   }
 
   // 面板 HTTP 路由（sameOrigin 门禁；LESSONS #11）
@@ -129,15 +153,18 @@ export function apply(ctx: Context): void {
       persona = typeof preview?.persona === 'string' ? preview.persona : undefined
     } catch { /* twin 缺席 → 兜底 */ }
     let memories: string[] = []
+    // P4 goals 精化：同一装载派生「当前目标」（[目标] 标记条目，结清同题即移除）
+    let goalsActive: Array<{ title: string; ts: string }> = []
     try {
       const memory = ctx.get('dsh-memory') as
         | { loadSharedMemory?(): Array<{ content: string }>; filterMemoriesForRead?(e: unknown[]): unknown[] }
         | undefined
       if (memory?.loadSharedMemory !== undefined) {
-        const entries = memory.filterMemoriesForRead !== undefined
+        const entries = (memory.filterMemoriesForRead !== undefined
           ? memory.filterMemoriesForRead(memory.loadSharedMemory())
-          : memory.loadSharedMemory()
-        memories = (entries as Array<{ content: string }>).slice(-8).map(e => e.content)
+          : memory.loadSharedMemory()) as Array<{ content: string; ts?: string }>
+        memories = entries.slice(-8).map(e => e.content)
+        goalsActive = settleGoals(extractGoalEntries(entries), entries).slice(-5)
       }
     } catch { /* 记忆缺席 → 空召回 */ }
 
@@ -161,6 +188,7 @@ export function apply(ctx: Context): void {
       lifeRecap,
       lastFinal: tail.filter(s => s.type === 'wake').at(-1)?.final,
       memories,
+      goalsActive,
       pendingMessages: reactiveQueue.splice(0, reactiveQueue.length).map(q => ({ from: q.from, text: q.text })),
       stalePendings: stalePendings(loadState().openPendings, now.getTime()),
       now,

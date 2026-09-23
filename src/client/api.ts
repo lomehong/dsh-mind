@@ -85,10 +85,19 @@ export async function fetchStatus(): Promise<StatusPayload> {
   return (await resp.json()) as StatusPayload
 }
 
-export async function fetchFeed(n = 200): Promise<FeedStep[]> {
-  const resp = await fetch(`/dsh-mind/timeline?n=${n}`)
+export async function fetchFeed(n = 200, beforeSeq?: number): Promise<FeedStep[]> {
+  const qs = beforeSeq !== undefined ? `&beforeSeq=${beforeSeq}` : ''
+  const resp = await fetch(`/dsh-mind/timeline?n=${n}${qs}`)
   const body = (await resp.json()) as { ok: boolean; steps: FeedStep[] }
   return body.steps ?? []
+}
+
+export interface GoalItem { title: string; ts: string }
+
+export async function fetchGoals(): Promise<GoalItem[]> {
+  const resp = await fetch('/dsh-mind/goals')
+  const body = (await resp.json()) as { ok: boolean; goals: GoalItem[] }
+  return body.goals ?? []
 }
 
 export interface PromptBlockInfo {

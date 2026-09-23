@@ -12,6 +12,11 @@ export interface PanelDeps {
     pendingApprovals(): number;
     /** 主人留言：message_in 落时间线 + 反应性唤醒。 */
     say(text: string): void;
+    /** P4 goals 精化：当前活跃目标（读侧提取自 dsh-memory [目标] 标记条目）。 */
+    activeGoals(): Array<{
+        title: string;
+        ts: string;
+    }>;
 }
 export declare function registerPanelApi(web: {
     register(route: {

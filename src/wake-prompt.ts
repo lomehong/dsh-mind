@@ -19,6 +19,8 @@ export interface WakePromptInputs {
   lastFinal?: string | undefined
   /** 记忆召回（dsh-memory 顶层当前条目摘要，最多 8 条） */
   memories?: ReadonlyArray<string> | undefined
+  /** 当前活跃目标（P4 goals 精化：[目标] 标记条目，最多 5 条） */
+  goalsActive?: ReadonlyArray<{ title: string; ts: string }> | undefined
   /** 待处理的 reactive 消息（渠道注入的人的话） */
   pendingMessages?: ReadonlyArray<{ from: string; text: string }> | undefined
   /** 久悬未结清的主人消息（P2.1 承诺账：>24h 升级为提醒） */
@@ -48,7 +50,7 @@ export const FUNCTION_MENU = `## 本次唤醒：从菜单里选恰好一件事�
 - **think** — 推进思绪一步：追加一条 \`thought\`，必须向前走（新角度或决定），不复述上一步。
 - **learn** — 最近的一对"动作+结果"里有值得长期记住的教训/事实/偏好 → 存入记忆（先检索防重），再记一条 \`thought\`。
 - **recall** — 某条已有记忆与当前相关但还没用上 → 检索并以 1–3 条 \`thought\` 呈现（"我想起：…"）。
-- **goals** — 意图成形/漂移/到期 → 校准目标与待办（已有的改，做完的删，新的才加），再记一条 \`thought\`。
+- **goals** — 意图成形/漂移/到期 → 校准目标与待办（已有的改，做完的删，新的才加），再记一条 \`thought\`。目标精化：新目标以 \`[目标] 标题（完成判据：…）\` 存入记忆——必须带一句完成判据；完成/放弃时补 \`[目标·完成]\`/\`[目标·放弃]\` 同题记录销账。
 - **idle** — 此刻确实没有值得做的事。追加一条 \`idle\` 步骤并结束（见输出格式）。诚实的 idle 好过编造的忙碌。
 
 规则：
@@ -154,6 +156,10 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   }
   if (inputs.memories !== undefined && inputs.memories.length > 0) {
     sections.push(`## 相关记忆（recall 的素材）\n\n${inputs.memories.map(m => `- ${m}`).join('\n')}`)
+  }
+  if (inputs.goalsActive !== undefined && inputs.goalsActive.length > 0) {
+    const lines = inputs.goalsActive.map(g => `- ${g.title}`)
+    sections.push(`## 当前目标（尚未完成；think/goals 时优先推进其中之一）\n\n${lines.join('\n')}`)
   }
 
   sections.push(blocks.menu)

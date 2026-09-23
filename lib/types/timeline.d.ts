@@ -38,6 +38,9 @@ export declare function readTail(maxSteps: number): {
     steps: TimelineStep[];
     skippedBadTail: number;
 };
+/** 只读投影分页（P4）：取 seq < beforeSeq 的最近 limit 步（新→旧）；beforeSeq
+ *  缺省 = 最新。纯数组变换（读文件仍走 readTail 全量——体量大后 P4+ 换游标存储）。 */
+export declare function paginateSteps(steps: ReadonlyArray<TimelineStep>, limit: number, beforeSeq?: number): TimelineStep[];
 /**
  * 滚动归档：把 ts 早于 cutoffDays 天的步骤移入按月归档件。
  * 实现为整文件重写（时间线体量 P1 有限；P3 金字塔时代换分段存储）。
