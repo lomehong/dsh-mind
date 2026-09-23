@@ -7,8 +7,9 @@
  * - 粗层节点显示聚合计数，点击下钻；细层单节点点击拉取该时间段叙事明细
  * - 友好交互：范围/粒度徽标、复位按钮、hover 高亮、加载与空态、边界钳制
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchRange, fetchTimelineMeta, type TimelineMetaStep } from './api.ts'
+import { fmtClock } from './format.tsx'
 import { coalesceRests, narrateStep, type NarratedStep } from '../narrate.ts'
 import { bucketStart, levelForSpan, nextBucketStart, ticksForRange, DENSE_BUCKET, type ScaleLevel } from '../lifetimeline-scale.ts'
 
