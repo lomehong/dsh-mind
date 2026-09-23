@@ -21,6 +21,7 @@ import type { SchedulerState } from './scheduler.ts'
 import { readTail, paginateSteps, type TimelineStep } from './timeline.ts'
 import { buildWakePrompt, DEFAULT_PROMPT_BLOCKS } from './wake-prompt.ts'
 import { loadPromptOverrides, PROMPT_BLOCK_KEYS, PROMPT_BLOCK_LABELS, resolveWakePromptBlocks, savePromptOverrides } from './prompts.ts'
+import { loadMissions, saveMissions } from './missions.ts'
 
 export interface PanelDeps {
   getConfig(): MindConfig
@@ -231,6 +232,27 @@ export function registerPanelApi(
       if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
       if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method not allowed' })
       json(res, 200, { ok: true, goals: deps.activeGoals() })
+    },
+  })
+
+  // 主人长期事项（missions.md）：GET 读 / POST 写（写门禁双闸）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-mind/missions',
+    handler: (req, res) => {
+      if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
+      if (req.method === 'GET') return json(res, 200, { ok: true, missions: loadMissions() })
+      if (req.method !== 'POST' && req.method !== 'PUT') return json(res, 405, { ok: false, error: 'method not allowed' })
+      if (!writeGate(req, res)) return
+      void (async () => {
+        try {
+          const body = JSON.parse(await readBody(req)) as { text?: unknown }
+          saveMissions(typeof body.text === 'string' ? body.text.slice(0, 4000) : '')
+          json(res, 200, { ok: true })
+        } catch (e) {
+          json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) })
+        }
+      })()
     },
   })
 

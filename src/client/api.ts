@@ -100,6 +100,17 @@ export async function fetchGoals(): Promise<GoalItem[]> {
   return body.goals ?? []
 }
 
+/** 主人长期事项（missions.md）。 */
+export async function fetchMissions(): Promise<string> {
+  const resp = await fetch('/dsh-mind/missions')
+  const body = (await resp.json()) as { ok: boolean; missions: string }
+  return body.missions ?? ''
+}
+
+export function saveMissions(text: string): Promise<{ ok: boolean; error?: string }> {
+  return postJson('/dsh-mind/missions', { text })
+}
+
 export interface TimelineMetaStep { seq: number; ts: string; type: string; fn?: string }
 
 /** P4 时间轴：全量轻量元数据（无正文）。 */

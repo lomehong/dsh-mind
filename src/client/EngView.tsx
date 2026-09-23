@@ -6,6 +6,7 @@
 import { fmtUsd } from './format.tsx'
 import { PromptsEditor } from './PromptsEditor.tsx'
 import { GoalsCard } from './GoalsCard.tsx'
+import { MissionsCard } from './MissionsCard.tsx'
 import { setMindStopped, type StatusPayload } from './api.ts'
 
 const SUB = 'var(--dsw-alias-label-secondary, #888)'
@@ -141,6 +142,11 @@ export function EngView({ status, refresh }: { status: StatusPayload | undefined
 
       {/* 活跃目标（P4 goals 精化） */}
       <GoalsCard />
+
+      {/* 主人长期事项（议程面：分身安静时推进的事） */}
+      <Card style={{ padding: '10px 14px 14px' }}>
+        <MissionsCard />
+      </Card>
 
       {/* 提示词调教面 */}
       <Card style={{ padding: '10px 14px 14px' }}>

@@ -55,6 +55,9 @@ export interface SchedulerState {
 }
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
 export declare const IDLE_STEP_EVERY = 6;
+/** 深思考拍：每 N 个连续机械空醒拍强制一次真醒（安静世界也要推进长期事项——
+ *  纯短路会让分身永远不再自发思考，那是感知器官缺失之外的第二重结构性闲置）。 */
+export declare const DEEP_THINK_EVERY = 12;
 export declare function dayKey(now: Date): string;
 /** 档位 n 的自发唤醒间隔：min(base×factor^(n-1), cap)，并夹到自驱地板。
  *  地板（默认 5 分钟）实现设计 G1「最低 5 分钟一醒」；2026-09-22 成本事故：

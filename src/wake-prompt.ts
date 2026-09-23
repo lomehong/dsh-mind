@@ -25,6 +25,10 @@ export interface WakePromptInputs {
   pendingMessages?: ReadonlyArray<{ from: string; text: string }> | undefined
   /** 久悬未结清的主人消息（P2.1 承诺账：>24h 升级为提醒） */
   stalePendings?: ReadonlyArray<{ ageHours: number; text: string }> | undefined
+  /** 主人关心的长期事项（missions.md——分身安静时的议程来源） */
+  missions?: string | undefined
+  /** 主人最近在做的事（最近会话标题，截断；分身的「主人在忙什么」感知） */
+  recentActivity?: ReadonlyArray<string> | undefined
   now: Date
 }
 
@@ -51,10 +55,11 @@ export const FUNCTION_MENU = `## 本次唤醒：从菜单里选恰好一件事�
 - **learn** — 最近的一对"动作+结果"里有值得长期记住的教训/事实/偏好 → 存入记忆（先检索防重），再记一条 \`thought\`。
 - **recall** — 某条已有记忆与当前相关但还没用上 → 检索并以 1–3 条 \`thought\` 呈现（"我想起：…"）。
 - **goals** — 意图成形/漂移/到期 → 校准目标与待办（已有的改，做完的删，新的才加），再记一条 \`thought\`。目标精化：新目标以 \`[目标] 标题（完成判据：…）\` 存入记忆——必须带一句完成判据；完成/放弃时补 \`[目标·完成]\`/\`[目标·放弃]\` 同题记录销账。
-- **idle** — 此刻确实没有值得做的事。追加一条 \`idle\` 步骤并结束（见输出格式）。诚实的 idle 好过编造的忙碌。
+- **idle** — 此刻确实没有值得做的事。追加一条 \`idle\` 步骤并结束（见输出格式）。诚实的 idle 好过编造的忙碌。**例外：有「主人关心的长期事项」或「主人最近在做的事」时，idle 不是默认答案——用 think/goals/act 推进其中一件。**
 
 规则：
 - 待处理的用户请求（"待处理消息"区）**压倒菜单**：有人在等你答应过的事——本轮优先 act 把它做完；做不了就追加一条 thought 说明卡在哪，然后继续。
+- 世界安静时也不躺平：长期事项与主人近况是你可以持续耕作的地——复盘、预研、做准备、把想到的有用结论存进记忆（learn）。
 - 每次唤醒**至少追加一条时间线步骤**（用你的时间线工具或直接说明），心智才算走过这一拍。
 - 具体胜过空泛："检查 X 并把结论发给 Y" 好过 "关注 X"。
 - 最后以一行交接棒结束（见输出格式）：做了什么、剩什么、下一步是什么。`
@@ -134,6 +139,15 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   const personaText = inputs.persona !== undefined && inputs.persona.trim() !== '' ? inputs.persona : FALLBACK_PERSONA
   sections.push(guardText)
   sections.push(`# 你是谁\n\n${personaText}\n\n你的名字：${inputs.identityName}。现在时间：${inputs.now.toISOString()}。`)
+
+  // 议程来源（安静时分身推进的东西）：长期事项 + 主人最近在忙什么
+  if (inputs.missions !== undefined && inputs.missions.trim() !== '') {
+    sections.push(`## 主人关心的长期事项（安静时优先推进它们）\n\n${inputs.missions.trim()}`)
+  }
+  if (inputs.recentActivity !== undefined && inputs.recentActivity.length > 0) {
+    const lines = inputs.recentActivity.map(a => `- ${a}`)
+    sections.push(`## 主人最近在做的事（你可以复盘、预研、做准备、发现能帮上忙的点）\n\n${lines.join('\n')}`)
+  }
 
   if (inputs.pendingMessages !== undefined && inputs.pendingMessages.length > 0) {
     const lines = inputs.pendingMessages.map(m => `- 来自 ${m.from}：${m.text.length > 300 ? `${m.text.slice(0, 297)}…` : m.text}`)

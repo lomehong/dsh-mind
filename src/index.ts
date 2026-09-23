@@ -19,8 +19,9 @@ import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts
 import { readRollups } from './rollups.ts'
 import { tryRollup } from './summarizer.ts'
 import { diffWorld } from './worldwatch.ts'
+import { loadMissions } from './missions.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, IDLE_STEP_EVERY, nextDelayMs, scheduleNextSpontaneous,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, DEEP_THINK_EVERY, IDLE_STEP_EVERY, nextDelayMs, scheduleNextSpontaneous,
   shouldShortCircuitSpontaneous,
   type SchedulerState, type TriggerDecision, type WakeOutcome,
 } from './scheduler.ts'
@@ -181,6 +182,25 @@ export function apply(ctx: Context): void {
     }
     // 提示词块：心智 Tab 覆盖层优先，缺席回落内置默认（每次唤醒现读，保存即生效）
     const blocks = resolveCurrentBlocks()
+    // 议程：主人长期事项（missions.md）+ 主人最近在忙的事（最近会话标题，感知面）
+    const missions = loadMissions()
+    let recentActivity: string[] = []
+    try {
+      const list = (await gw.invoke('session', 'list', {})) as {
+        items?: ReadonlyArray<{ sessionId?: string; title?: string; updatedAt?: number; lastActiveAt?: number }>
+      }
+      const selfIds = new Set([state.mindSessionId, state.summarizerSessionId].filter(Boolean))
+      recentActivity = (list.items ?? [])
+        .filter(s => typeof s.title === 'string' && s.title.trim() !== '' && !selfIds.has(s.sessionId ?? ''))
+        .sort((a, b) => (b.lastActiveAt ?? b.updatedAt ?? 0) - (a.lastActiveAt ?? a.updatedAt ?? 0))
+        .slice(0, 6)
+        .map(s => {
+          const when = (s.lastActiveAt ?? s.updatedAt ?? 0) > 0
+            ? new Date(s.lastActiveAt ?? s.updatedAt ?? 0).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+            : ''
+          return `${s.title!.slice(0, 48)}${when !== '' ? `（${when}）` : ''}`
+        })
+    } catch { /* 会话列表缺席 → 近况留空 */ }
     const prompt = buildWakePrompt({
       identityName: '分身',
       guard,
@@ -190,6 +210,8 @@ export function apply(ctx: Context): void {
       lastFinal: tail.filter(s => s.type === 'wake').at(-1)?.final,
       memories,
       goalsActive,
+      missions,
+      recentActivity,
       pendingMessages: reactiveQueue.splice(0, reactiveQueue.length).map(q => ({ from: q.from, text: q.text })),
       stalePendings: stalePendings(loadState().openPendings, now.getTime()),
       now,
@@ -407,7 +429,10 @@ export function apply(ctx: Context): void {
         const newObservations = tail.filter(s =>
           (s.type === 'message_in' || s.type === 'observation' || s.type === 'task')
           && Date.parse(s.ts) > state.lastWakeAt).length
-        if (shouldShortCircuitSpontaneous(cfg, state, {
+        // 深思考拍：每 DEEP_THINK_EVERY 个短路拍强制一次真醒——安静世界也要推进
+        // 长期事项（纯短路会让分身永远不再自发思考，结构性闲置）
+        const dueDeepThink = (state.idleStreak ?? 0) + 1 >= DEEP_THINK_EVERY
+        if (!dueDeepThink && shouldShortCircuitSpontaneous(cfg, state, {
           reactiveQueued: reactiveQueue.length > 0,
           eventQueued: false,
           newObservations,
