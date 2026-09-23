@@ -1,6 +1,6 @@
 {
   "name": "@dsh-extra/dsh-mind",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "分身心智运行时：时间线 + 唤醒调度器 + 函数菜单唤醒 run + 心智主页——分身的持续心智（设计稿 docs/mind-runtime-design.md v0.5）",
   "type": "module",
   "main": "lib/index.js",
