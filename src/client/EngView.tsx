@@ -4,6 +4,7 @@
  * 全部走主题 token（含回退色），与人视图同一套圆角/间距节奏。
  */
 import { fmtUsd } from './format.tsx'
+import { PromptsEditor } from './PromptsEditor.tsx'
 import { setMindStopped, type StatusPayload } from './api.ts'
 
 const SUB = 'var(--dsw-alias-label-secondary, #888)'
