@@ -4,13 +4,33 @@
  */
 import { useState } from 'react'
 import { fetchFeed, type FeedStep } from './api.ts'
-import { narrateStep, type NarratedStep } from '../narrate.ts'
+import { coalesceRests, narrateStep, type NarratedStep } from '../narrate.ts'
 import { fmtClock } from './format.tsx'
 
 const SUB = 'var(--dsw-alias-label-secondary, #888)'
 const PAGE = 100
 
 function Row({ step }: { step: NarratedStep }): JSX.Element {
+  if (step.kind === 'rest' && step.fold !== undefined && step.fold.count > 1) {
+    return (
+      <details style={{ padding: '3px 2px', borderBottom: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.12))' }}>
+        <summary style={{ cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'baseline', color: SUB, fontSize: 12 }}>
+          <span style={{ fontSize: 11, whiteSpace: 'nowrap', fontFamily: 'ui-monospace, monospace' }}>
+            {fmtClock(step.fold.fromTs)}~{fmtClock(step.fold.toTs)}
+          </span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{step.title}</span>
+        </summary>
+        <div style={{ padding: '2px 0 4px 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {step.fold.items.map(item => (
+            <div key={item.seq} style={{ display: 'flex', gap: 8, fontSize: 11, color: SUB }}>
+              <span style={{ fontFamily: 'ui-monospace, monospace' }}>{fmtClock(item.ts)}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+            </div>
+          ))}
+        </div>
+      </details>
+    )
+  }
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '4px 2px', borderBottom: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.12))' }}>
       <span style={{ color: SUB, fontSize: 11, whiteSpace: 'nowrap', fontFamily: 'ui-monospace, monospace' }}>{fmtClock(step.ts)}</span>
@@ -59,9 +79,10 @@ export function HistoryBrowser(): JSX.Element {
   }
 
   const lastSeq = steps.length > 0 ? steps[steps.length - 1]!.seq : undefined
+  const rows = coalesceRests(steps.map(narrateStep))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-      {steps.map(s => <Row key={s.seq} step={narrateStep(s)} />)}
+      {rows.map(n => <Row key={n.seq} step={n} />)}
       {!done && lastSeq !== undefined && (
         <button
           type="button"

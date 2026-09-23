@@ -20,6 +20,8 @@ export interface NarratedStep {
   /** 工程细节（触发源/用量/成本），人视图默认收起。 */
   detail?: string
   tone?: 'normal' | 'subtle' | 'warn'
+  /** 折叠明细（仅合并的休息步）：原始各拍可展开查看。 */
+  fold?: { count: number; fromTs: string; toTs: string; items: NarratedStep[] }
 }
 
 const FN_LABELS: Record<string, string> = {
@@ -94,14 +96,18 @@ export interface DayGroup {
 
 const dayKeyOf = (ts: string): string => ts.slice(0, 10)
 
-/** 折叠连续的休息步：人不会每分钟写一篇一模一样的空日记（设计 §12.1 idle 折叠纪律）。 */
-function coalesceRests(steps: NarratedStep[]): NarratedStep[] {
+/** 折叠连续的休息步：人不会每分钟写一篇一模一样的空日记（设计 §12.1 idle 折叠纪律）。
+ *  折叠结果携带 fold 明细（原始各拍），UI 可点击展开查看。 */
+export function coalesceRests(steps: NarratedStep[]): NarratedStep[] {
   const out: NarratedStep[] = []
   for (const step of steps) {
     const last = out[out.length - 1]
     if (step.kind === 'rest' && last !== undefined && last.kind === 'rest') {
-      const count = Number(/（(\d+) 次空醒）$/.exec(last.title)?.[1] ?? 1) + 1
-      out[out.length - 1] = { ...last, seq: step.seq, title: count > 1 ? `我歇了一会儿（${count} 次空醒）` : '我歇了一会儿' }
+      const fold = last.fold ?? { count: 1, fromTs: last.ts, toTs: last.ts, items: [last] }
+      fold.count += 1
+      fold.toTs = step.ts
+      fold.items.push(step)
+      out[out.length - 1] = { ...last, seq: step.seq, title: `我歇了一会儿（${fold.count} 次空醒）`, fold }
       continue
     }
     out.push(step)

@@ -4,7 +4,7 @@
  * 翻翻 TA 最近的生活、照看 TA。容器不拦截操作（pointer-events 穿透）。
  */
 import { useState } from 'react'
-import { narrateStep, presenceLine } from '../narrate.ts'
+import { coalesceRests, narrateStep, presenceLine } from '../narrate.ts'
 import { fetchFeed, fetchStatus, setMindStopped, usePoll, type StatusPayload } from './api.ts'
 import { Being } from './Being.tsx'
 import { Composer } from './Composer.tsx'
@@ -106,7 +106,7 @@ export function CompanionLayer(): JSX.Element {
   )
 }
 
-/** 最近生活（仅展开时拉取，最多 14 步）。 */
+/** 最近生活（仅展开时拉取，最多 14 步；连续休息折叠可展开）。 */
 function RecentLife(): JSX.Element {
   const feed = usePoll(async () => (await fetchFeed(30)).slice(0, 14), POLL_FEED_MS)
   if (feed.data === undefined) {
@@ -115,10 +115,32 @@ function RecentLife(): JSX.Element {
   if (feed.data.length === 0) {
     return <div style={{ fontSize: 12, color: SUB, padding: '6px 0' }}>TA 还没醒过。</div>
   }
+  const rows = coalesceRests(feed.data.map(narrateStep))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 0 4px', maxHeight: 260, overflowY: 'auto' }}>
-      {feed.data.map(s => {
-        const n = narrateStep(s)
+      {rows.map(n => {
+        if (n.kind === 'rest' && n.fold !== undefined && n.fold.count > 1) {
+          return (
+            <div key={n.seq} style={{ fontSize: 12 }}>
+              <details>
+                <summary style={{ cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'baseline', color: SUB, listStyle: 'revert' }}>
+                  <span style={{ whiteSpace: 'nowrap', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>
+                    {fmtClock(n.fold.fromTs)}~{fmtClock(n.fold.toTs)}
+                  </span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.title}</span>
+                </summary>
+                <div style={{ padding: '2px 0 2px 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {n.fold.items.map(item => (
+                    <div key={item.seq} style={{ display: 'flex', gap: 8, color: SUB, fontSize: 11 }}>
+                      <span style={{ fontFamily: 'ui-monospace, monospace' }}>{fmtClock(item.ts)}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+          )
+        }
         const text = n.kind === 'you'
           ? `你说：${n.body ?? ''}`
           : n.kind === 'rest'
