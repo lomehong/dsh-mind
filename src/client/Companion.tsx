@@ -117,7 +117,7 @@ function RecentLife(): JSX.Element {
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 0 4px', maxHeight: 260, overflowY: 'auto' }}>
-      {[...feed.data].reverse().map(s => {
+      {feed.data.map(s => {
         const n = narrateStep(s)
         const text = n.kind === 'you'
           ? `你说：${n.body ?? ''}`
