@@ -84,7 +84,10 @@ export function CompanionLayer(): JSX.Element {
 
           <Composer status={st} compact refresh={() => { status.refresh() }} />
 
-          <Section summary="TA 最近的生活"><RecentLife /></Section>
+          <Section summary="TA 最近的生活">
+            <div style={{ fontSize: 10.5, color: SUB, margin: '-2px 0 2px' }}>安静时空醒约每 30 分钟记一笔（心跳照常每 5 分钟一拍）</div>
+            <RecentLife />
+          </Section>
           <Section summary="照看 TA"><CareMini status={st} refresh={() => { status.refresh() }} /></Section>
         </div>
       )}
