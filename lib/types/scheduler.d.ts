@@ -50,6 +50,8 @@ export interface SchedulerState {
     }>;
     /** 连续机械空醒计数（密度治理：每 IDLE_STEP_EVERY 拍才落一条 idle 步骤） */
     idleStreak: number;
+    /** 世界观察指纹（看板/记忆在两次唤醒间的状态快照；undefined=未吸收过） */
+    worldFingerprint?: string;
 }
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
 export declare const IDLE_STEP_EVERY = 6;

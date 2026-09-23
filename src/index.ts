@@ -18,6 +18,7 @@ import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
 import { readRollups } from './rollups.ts'
 import { tryRollup } from './summarizer.ts'
+import { diffWorld } from './worldwatch.ts'
 import {
   advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, IDLE_STEP_EVERY, nextDelayMs, scheduleNextSpontaneous,
   shouldShortCircuitSpontaneous,
@@ -235,6 +236,9 @@ export function apply(ctx: Context): void {
       .then(r => { if (!r.ok && r.reason !== undefined && r.reason !== 'not-due') logger.warn?.(`[dsh-mind] 卷积跳过: ${r.reason}`) })
       .catch(() => { /* 静默 */ })
 
+    // 世界观察：吸收自己造成的变化（task_delegate 落板/learn 写记忆不算"外部事件"）
+    absorbWorld()
+
     // share 投递：经注册渠道送达（对齐「渠道=终端」——右下角/IM 都是出口）。
     // 全失败/无渠道 → 仅时间线留痕，不重试不阻塞（下拍复盘可再提）。
     if (fn === 'share') {
@@ -317,6 +321,40 @@ export function apply(ctx: Context): void {
     })
   }
 
+  /** 世界观察（分身的感知器官）：两次唤醒之间看板/记忆有变化 → 注入观察
+   *  触发反应性唤醒。看板缺失/网络失败静默（感知不到就回到自驱节奏）。
+   *  防自激：指纹即时更新（同一变化只注入一次）；唤醒收尾再吸收自己造成的变化。 */
+  async function checkWorld(): Promise<void> {
+    const cfgNow = loadMindConfig()
+    if (!cfgNow.worldWatchEnabled) return
+    const taskCols: Record<string, number> = {}
+    try {
+      const resp = await fetch(`${cfgNow.worldWatchUrl}/dsh-task-board/state`, { signal: AbortSignal.timeout(5000) })
+      const body = (await resp.json()) as { ok?: boolean; state?: { tasks?: Array<{ column?: string }> } }
+      for (const t of body.state?.tasks ?? []) {
+        const c = t.column ?? '?'
+        taskCols[c] = (taskCols[c] ?? 0) + 1
+      }
+    } catch { /* 看板缺席/超时：本轮只看记忆 */ }
+    const entries = readMemoryEntries()
+    const counts = { taskCols, memoryCount: entries.length }
+    const s = loadState()
+    const diff = diffWorld(s.worldFingerprint, counts)
+    if (diff.fp === s.worldFingerprint) return
+    s.worldFingerprint = diff.fp
+    saveState(s)
+    if (diff.desc !== null && !running) {
+      logger.info?.(`[dsh-mind] ${diff.desc}——注入观察触发唤醒`)
+      injectObservation('世界', diff.desc, { source: '世界观察' })
+    }
+  }
+
+  /** 唤醒收尾：静默吸收自己造成的世界变化（task_delegate 落板/learn 写记忆），
+   *  防「自己动手 → 世界变化 → 又被自己观察」的自激循环。 */
+  function absorbWorld(): void {
+    void checkWorld().catch(() => { /* 静默 */ })
+  }
+
   /** 机械空醒（成本闸）：不调用模型，记 idle 步骤并按空转推进阶梯。
    *  2026-09-22 成本事故：空转拍也曾各跑一次完整 LLM turn（实测 ~4.4K tok/次）。 */
   function mechanicalIdle(): void {
@@ -347,14 +385,18 @@ export function apply(ctx: Context): void {
   }
 
   // 调度 tick（1s；宿主 timer 常驻语义——宿主活着心智就活着，设计 §12.1）
+  let watchTicks = 0
   const tick = setInterval(() => {
     try {
       if (disposed || running) return
+      // 世界观察（每 ~20s 一次巡查；变化注入观察触发反应性唤醒——分身的感知器官）
+      watchTicks += 1
+      if (watchTicks % 20 === 0) { void checkWorld(); return }
       const state = loadState()
       const cfg = loadMindConfig()
       const decision: TriggerDecision = collectDueMindTriggers(Date.now(), state, cfg, {
         reactiveQueued: reactiveQueue.length > 0,
-        eventQueued: false, // P1 无事件源；P2 接 task-board 事件
+        eventQueued: false, // 看板/记忆事件经 checkWorld 以 reactive 注入（§6.4 语义）
       })
       if (!decision.fire) return
       // 自驱空醒短路：无新事可议时不调用模型（反应性/事件触发永不短路）

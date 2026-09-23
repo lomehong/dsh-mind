@@ -34,6 +34,10 @@ export interface MindConfig {
     presetId: string;
     /** 输入 token 超过此值即重建（弃旧）心智会话 */
     sessionResetTokens: number;
+    /** 世界观察：任务看板基址（分身的感知器官——看板/记忆变化注入观察触发唤醒） */
+    worldWatchUrl: string;
+    /** 世界观察开关 */
+    worldWatchEnabled: boolean;
 }
 export declare const CONFIG_DEFAULTS: MindConfig;
 /** 配置合并（纯函数，测试用）：非法键回落默认并夹紧边界。 */

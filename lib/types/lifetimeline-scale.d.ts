@@ -17,9 +17,11 @@ export declare function nextBucketStart(level: ScaleLevel, bucketT: number): num
 export interface Tick {
     t: number;
     label: string;
+    major?: boolean;
 }
 /** 可视范围内的刻度线（含标签；本地时区；粒度语义化）。
- *  包含覆盖可视起点的那个标签（左端第一段也要有名字——友好性）。 */
+ *  包含覆盖可视起点的那个标签（左端第一段也要有名字——友好性）；
+ *  跨天的小时粒度：首刻度与零点刻度带日期前缀，零点为主刻度。 */
 export declare function ticksForRange(level: ScaleLevel, startMs: number, endMs: number): Tick[];
 /** 单粒度桶超出多少条算「密集」（下钻而非直接展示明细）。 */
 export declare const DENSE_BUCKET = 30;

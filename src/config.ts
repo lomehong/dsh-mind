@@ -38,6 +38,10 @@ export interface MindConfig {
   presetId: string
   /** 输入 token 超过此值即重建（弃旧）心智会话 */
   sessionResetTokens: number
+  /** 世界观察：任务看板基址（分身的感知器官——看板/记忆变化注入观察触发唤醒） */
+  worldWatchUrl: string
+  /** 世界观察开关 */
+  worldWatchEnabled: boolean
 }
 
 export const CONFIG_DEFAULTS: MindConfig = {
@@ -59,6 +63,8 @@ export const CONFIG_DEFAULTS: MindConfig = {
   timelineRetentionDays: 180,
   presetId: 'digital-twin',
   sessionResetTokens: 60000,
+  worldWatchUrl: 'http://127.0.0.1:3088',
+  worldWatchEnabled: true,
 }
 
 const toBool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback)
@@ -97,6 +103,8 @@ export function mergeMindConfig(raw: unknown): MindConfig {
   m.minSpontaneousIntervalMs = toNum(r.minSpontaneousIntervalMs, m.minSpontaneousIntervalMs, 30000, 3600000)
   m.idleShortCircuit = toBool(r.idleShortCircuit, m.idleShortCircuit)
   m.wakeTimeoutMs = toNum(r.wakeTimeoutMs, m.wakeTimeoutMs, 30000, 7200000)
+  m.worldWatchUrl = typeof r.worldWatchUrl === 'string' && r.worldWatchUrl !== '' ? r.worldWatchUrl.replace(/\/+$/, '') : m.worldWatchUrl
+  m.worldWatchEnabled = toBool(r.worldWatchEnabled, m.worldWatchEnabled)
   m.timelineRetentionDays = toNum(r.timelineRetentionDays, m.timelineRetentionDays, 7, 3650)
   if (typeof r.presetId === 'string' && r.presetId !== '') m.presetId = r.presetId
   m.sessionResetTokens = toNum(r.sessionResetTokens, m.sessionResetTokens, 10000, 1000000)
