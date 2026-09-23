@@ -164,14 +164,16 @@ export function LifeTimeline(): JSX.Element {
     window.addEventListener('mouseup', up)
   }
   const onNodeClick = (b: Bucket): void => {
-    if (b.total > DENSE_BUCKET || level !== 'hour') {
+    // 已下钻到该桶占满视口 → 再点就是看明细（密集桶也有出口，不会点不动）
+    const alreadyDrilled = (b.end - b.start) >= (v.end - v.start) * 0.5
+    if ((b.total > DENSE_BUCKET || level !== 'hour') && !alreadyDrilled) {
       // 下钻：视口推进到该桶
       const pad = Math.max(3_600_000, (b.end - b.start) * 0.05)
       setView({ start: b.start - pad, end: b.end + pad })
       setDetail(undefined)
       return
     }
-    // 细层：拉取该桶叙事明细
+    // 细层/已到底：拉取该桶叙事明细
     setDetail({ loading: true })
     fetchRange(b.start, b.end)
       .then(steps => setDetail({ loading: false, rows: coalesceRests(steps.map(narrateStep)) }))
@@ -218,12 +220,14 @@ export function LifeTimeline(): JSX.Element {
               </g>
             )
           })}
-          {/* idle 背景密度（底部灰带） */}
+          {/* idle 背景密度（底部灰带；悬停可看心跳计数——本身不是活动节点，不可点击） */}
           {bucketList.filter(b => b.idle > 0).map(b => {
             const x = msToX(b.start)
             const w = Math.max(2, msToX(b.end) - x - 1)
             const h = Math.max(2, (b.idle / maxIdle) * 26)
-            return <rect key={`i${b.start}`} x={x} y={AXIS_Y - h} width={w} height={h} rx={1.5} fill='rgba(128,128,128,.16)' />
+            return <rect key={`i${b.start}`} x={x} y={AXIS_Y - h} width={w} height={h} rx={1.5} fill='rgba(128,128,128,.16)'>
+              <title>{`${new Date(b.start).toLocaleString('zh-CN')} 起的${level === 'hour' ? '一小时' : '一段'} · ${b.idle} 次心跳（空醒，非活动）`}</title>
+            </rect>
           })}
           {/* 有效活动节点（直方图柱：柱位=桶区间，柱高=活动数——消除位置歧义） */}
           {bucketList.filter(b => b.total > 0).map(b => {
