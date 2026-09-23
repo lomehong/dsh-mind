@@ -13,6 +13,7 @@ import { loadMindConfig, mindHome, type MindConfig } from './config.ts'
 import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
 import { WakeRunner } from './runner.ts'
+import { deliverToChannels, registerMindChannel } from './channels.ts'
 import {
   advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, nextDelayMs, scheduleNextSpontaneous,
   shouldShortCircuitSpontaneous,
@@ -190,6 +191,16 @@ export function apply(ctx: Context): void {
     state.running = false
     saveState(state)
     logger.info?.(`[dsh-mind] 唤醒完成 fn=${wakeStep.fn} outcome=${outcome} cost=$${cost.toFixed(4)}`)
+
+    // share 投递：经注册渠道送达（对齐「渠道=终端」——右下角/IM 都是出口）。
+    // 全失败/无渠道 → 仅时间线留痕，不重试不阻塞（下拍复盘可再提）。
+    if (fn === 'share') {
+      void deliverToChannels({ to: 'master', text: finalText })
+        .then(r => {
+          if (r.delivered === 0) logger.warn?.('[dsh-mind] share 无渠道可投递（仅时间线留痕）')
+        })
+        .catch(() => { /* 投递失败不影响主流程 */ })
+    }
   }
 
   function fnOf(final: string): NonNullable<TimelineStep['fn']> {
@@ -405,6 +416,11 @@ export function apply(ctx: Context): void {
 
   const service = {
     injectObservation,
+    /** 渠道适配器注册（§6.1 单向注册：渠道侧惰性调用，如 im-channel）。
+     *  注册后心智的 share 产出会经 deliver 投递到该渠道。返回注销函数。 */
+    registerChannel(channel: { id: string; deliver(payload: { to: string; text: string; refs?: Record<string, string> }): Promise<boolean> | boolean }): () => void {
+      return registerMindChannel(channel)
+    },
     /** 手动触发一次唤醒（测试/调试）。 */
     wakeNow(): void {
       const state = loadState()
