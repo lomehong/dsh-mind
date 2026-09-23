@@ -246,6 +246,7 @@ export function apply(ctx: Context): void {
       state.openPendings = resolvePendingsBefore(state.openPendings, now.toISOString())
     }
     state.idleStreak = 0 // 真实唤醒打断机械空醒连拍
+    state.lastWakeAt = Date.now() // 锚定到唤醒【结束】：世界观察的回显抑制窗从结束点起算
     state.wakeAt = scheduleNextSpontaneous(state, cfg, Date.now(), outcome)
     state = advanceAfterWake(state, outcome, cfg)
     state.running = false
@@ -364,9 +365,9 @@ export function apply(ctx: Context): void {
     const diff = diffWorld(s.worldFingerprint, counts)
     if (diff.fp === s.worldFingerprint) return
     s.worldFingerprint = diff.fp
-    // 自回显压制：唤醒结束 60 秒内的世界变化多半是 TA 自己动作的回显
-    // （absorbWorld 是异步收尾，与 20s 巡查 tick 有竞态窗口）——静默吸收不注入
-    const recentWake = s.lastWakeAt > 0 && Date.now() - s.lastWakeAt < 60000
+    // 自回显压制：唤醒【结束】90 秒内的世界变化多半是 TA 自己动作的回显
+    // （absorbWorld 异步收尾与 20s 巡查 tick 有竞态窗口）——静默吸收不注入
+    const recentWake = s.lastWakeAt > 0 && Date.now() - s.lastWakeAt < 90000
     saveState(s)
     if (diff.desc !== null && !running && !recentWake) {
       logger.info?.(`[dsh-mind] ${diff.desc}——注入观察触发唤醒`)
