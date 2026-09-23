@@ -197,6 +197,26 @@ export function registerPanelApi(
       const n = Math.min(200, Math.max(1, Number(url.searchParams.get('n') ?? 50) || 50))
       const beforeRaw = url.searchParams.get('beforeSeq')
       const beforeNum = beforeRaw !== null && beforeRaw !== '' ? Number(beforeRaw) : undefined
+      // P4 时间轴：meta=1 全量轻量元数据（seq/ts/type/fn，无正文）；fromTs/toTs
+      // 返回时间段内带正文的步骤（详情下钻用，旧→新，上限 100）
+      if (url.searchParams.get('meta') === '1') {
+        const all = readTail(1_000_000).steps
+        return json(res, 200, {
+          ok: true,
+          steps: all.map(s => ({ seq: s.seq, ts: s.ts, type: s.type, fn: s.fn })),
+        })
+      }
+      const fromRaw = url.searchParams.get('fromTs')
+      const toRaw = url.searchParams.get('toTs')
+      if (fromRaw !== null || toRaw !== null) {
+        const fromMs = fromRaw !== null && fromRaw !== '' ? Number(fromRaw) : 0
+        const toMs = toRaw !== null && toRaw !== '' ? Number(toRaw) : Number.MAX_SAFE_INTEGER
+        const inRange = readTail(1_000_000).steps
+          .filter(s => { const t = Date.parse(s.ts); return !Number.isNaN(t) && t >= fromMs && t <= toMs })
+          .reverse() // 旧→新（阅读顺序）
+          .slice(0, 100)
+        return json(res, 200, { ok: true, steps: inRange })
+      }
       const all = readTail(200).steps
       const steps = paginateSteps(all, n, Number.isFinite(beforeNum) ? beforeNum : undefined)
       json(res, 200, { ok: true, steps, hasMore: steps.length === n })

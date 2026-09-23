@@ -8,7 +8,7 @@ import { presenceLine, greeting } from '../narrate.ts'
 import { fetchStatus, usePoll } from './api.ts'
 import { Being } from './Being.tsx'
 import { EngView } from './EngView.tsx'
-import { HistoryBrowser } from './HistoryBrowser.tsx'
+import { LifeTimeline } from './LifeTimeline.tsx'
 
 const VIEW_KEY = 'dsh-mind.view'
 
@@ -49,11 +49,11 @@ export function MindPage(): JSX.Element {
           想调教 TA 的行为方式？切到「工程视图」改 TA 的提示词。
         </div>
       </div>
-      {/* P4 只读投影：全史浏览器（只读，无回复入口） */}
-      <details>
-        <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--dsw-alias-label-secondary, #aaa)', userSelect: 'none' }}>TA 的一生（只读全史）</summary>
+      {/* P4 只读投影：语义缩放时间轴（滚轮缩放/拖拽平移/点击节点） */}
+      <details open>
+        <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--dsw-alias-label-secondary, #aaa)', userSelect: 'none' }}>TA 的一生（时间轴 · 滚轮缩放）</summary>
         <div style={{ paddingTop: 8 }}>
-          <HistoryBrowser />
+          <LifeTimeline />
         </div>
       </details>
     </div>

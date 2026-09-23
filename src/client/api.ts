@@ -100,6 +100,22 @@ export async function fetchGoals(): Promise<GoalItem[]> {
   return body.goals ?? []
 }
 
+export interface TimelineMetaStep { seq: number; ts: string; type: string; fn?: string }
+
+/** P4 时间轴：全量轻量元数据（无正文）。 */
+export async function fetchTimelineMeta(): Promise<TimelineMetaStep[]> {
+  const resp = await fetch('/dsh-mind/timeline?meta=1')
+  const body = (await resp.json()) as { ok: boolean; steps: TimelineMetaStep[] }
+  return body.steps ?? []
+}
+
+/** P4 时间轴：时间段内的步骤（带正文，旧→新）。 */
+export async function fetchRange(fromMs: number, toMs: number): Promise<FeedStep[]> {
+  const resp = await fetch(`/dsh-mind/timeline?fromTs=${fromMs}&toTs=${toMs}`)
+  const body = (await resp.json()) as { ok: boolean; steps: FeedStep[] }
+  return body.steps ?? []
+}
+
 export interface PromptBlockInfo {
   key: 'menu' | 'rules' | 'outputFormat' | 'style'
   label: string

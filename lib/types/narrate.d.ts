@@ -18,6 +18,13 @@ export interface NarratedStep {
     /** 工程细节（触发源/用量/成本），人视图默认收起。 */
     detail?: string;
     tone?: 'normal' | 'subtle' | 'warn';
+    /** 折叠明细（仅合并的休息步）：原始各拍可展开查看。 */
+    fold?: {
+        count: number;
+        fromTs: string;
+        toTs: string;
+        items: NarratedStep[];
+    };
 }
 /** 单步 → 叙事。未知类型回落为 moment（保守呈现，不丢内容）。 */
 export declare function narrateStep(s: TimelineStep): NarratedStep;
@@ -27,6 +34,9 @@ export interface DayGroup {
     /** 天内旧→新。 */
     steps: NarratedStep[];
 }
+/** 折叠连续的休息步：人不会每分钟写一篇一模一样的空日记（设计 §12.1 idle 折叠纪律）。
+ *  折叠结果携带 fold 明细（原始各拍），UI 可点击展开查看。 */
+export declare function coalesceRests(steps: NarratedStep[]): NarratedStep[];
 /** 新→旧 的步骤流 → 天分组（新天在前，天内旧→新，连续休息折叠）。 */
 export declare function groupByDay(steps: TimelineStep[], now: Date): DayGroup[];
 export interface PresenceInput {
