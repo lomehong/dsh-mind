@@ -2,23 +2,22 @@
  * P3.2 / P2.1 / 密度治理 测试：
  * - rollups：跨度选择 + 存储往返 + 生命概览摘要行
  * - pendings：入账上限 / 清账边界 / 久悬升级
+ *
+ * 隔离：DSH_HOME 指向一次性临时目录（必须在任何用例前设置——rollups.ts 在
+ * 调用时读环境变量；禁止 mock node:os，会连累 tmpdir 自身失效）。
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import type { TimelineStep } from '../src/timeline.ts'
 import { renderLifeRecap, RECAP_FANOUT } from '../src/recap.ts'
 import { appendRollup, readRollups, selectRollupSpan, buildRollupPrompt } from '../src/rollups.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from '../src/pendings.ts'
 
-let dir: string | undefined
-try {
-  dir = mkdtempSync(join(tmpdir(), 'dsh-mind-rollups-'))
-  process.env.DSH_HOME = dir
-  vi.mock('node:os', () => ({ homedir: () => dir }))
-} catch { /* 环境异常时后续用例自会暴露 */ }
-afterAll(() => { if (dir !== undefined) rmSync(dir, { recursive: true, force: true }) })
+const dir = mkdtempSync(join(tmpdir(), 'dsh-mind-rollups-'))
+process.env.DSH_HOME = dir
+afterAll(() => { rmSync(dir, { recursive: true, force: true }) })
 
 function step(seq: number, content = `步骤 ${seq}`, type = 'wake'): TimelineStep {
   return { v: 2, seq, ts: new Date(Date.UTC(2026, 8, 23, 1, seq)).toISOString(), type: type as TimelineStep['type'], source: 'mind', content }
