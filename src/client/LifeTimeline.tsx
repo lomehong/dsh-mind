@@ -188,6 +188,9 @@ export function LifeTimeline(): JSX.Element {
     return `${Math.round(days * 24 * 60)} 分钟`
   }
 
+  const fmtDay = (t: number): string => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}` }
+  const fmtHM = (t: number): string => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -195,7 +198,10 @@ export function LifeTimeline(): JSX.Element {
           fontSize: 10.5, padding: '1px 8px', borderRadius: 7, color: BRAND,
           background: `color-mix(in srgb, ${BRAND} 13%, transparent)`, border: `1px solid color-mix(in srgb, ${BRAND} 38%, transparent)`,
         }}>粒度 · {LEVEL_LABEL[level]}</span>
-        <span style={{ fontSize: 11, color: SUB }}>视口 {fmtSpan()} · 滚轮缩放 / 拖拽平移 / 点击节点下钻</span>
+        <span style={{ fontSize: 11, color: SUB }}>
+          {fmtDay(v.start)} {fmtHM(v.start)} ~ {fmtDay(v.end)} {fmtHM(v.end)}（{fmtSpan()}）
+        </span>
+        <span style={{ fontSize: 11, color: SUB }}>· 滚轮缩放 / 拖拽平移 / 点击节点下钻</span>
         <button
           type="button" onClick={fit}
           style={{ marginLeft: 'auto', fontSize: 11, cursor: 'pointer', border: 'none', background: 'transparent', color: SUB, textDecoration: 'underline' }}
@@ -210,13 +216,14 @@ export function LifeTimeline(): JSX.Element {
         <svg width={width} height={HEIGHT} style={{ display: 'block', overflow: 'visible' }}>
           {/* 轴线 */}
           <line x1={0} y1={AXIS_Y} x2={width} y2={AXIS_Y} stroke={BORDER} strokeWidth={1} />
-          {/* 刻度 */}
+          {/* 刻度（major=跨天零点/月年边界：贯穿线 + 加粗日期标签） */}
           {ticks.map(t => {
             const x = msToX(t.t)
             return (
               <g key={`t${t.t}`}>
-                <line x1={x} y1={AXIS_Y - 6} x2={x} y2={AXIS_Y + 6} stroke={BORDER} strokeWidth={1} />
-                <text x={x + 4} y={AXIS_Y + 20} fontSize={10.5} fill={SUB} fontFamily='ui-monospace, monospace'>{t.label}</text>
+                {t.major === true && <line x1={x} y1={12} x2={x} y2={AXIS_Y} stroke={BORDER} strokeWidth={1} strokeDasharray='2 4' opacity={0.55} />}
+                <line x1={x} y1={AXIS_Y - (t.major === true ? 9 : 6)} x2={x} y2={AXIS_Y + 6} stroke={BORDER} strokeWidth={1} />
+                <text x={x + 4} y={AXIS_Y + 20} fontSize={t.major === true ? 11 : 10.5} fontWeight={t.major === true ? 600 : 400} fill={SUB} fontFamily='ui-monospace, monospace'>{t.label}</text>
               </g>
             )
           })}

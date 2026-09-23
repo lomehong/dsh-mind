@@ -51,4 +51,14 @@ describe('ticksForRange', () => {
     expect(ticks.length).toBe(3)
     expect(ticks[1]!.label).toBe('9/23')
   })
+  it('跨天的小时刻度：首刻度与零点带日期，零点为主刻度', () => {
+    const start = new Date(2026, 8, 22, 14).getTime()
+    const end = new Date(2026, 8, 23, 13).getTime()
+    const ticks = ticksForRange('hour', start, end)
+    expect(ticks[0]!.label).toBe('9/22 14时') // 首刻度带日期
+    const midnight = ticks.find(t => t.major === true)
+    expect(midnight).not.toBeUndefined()
+    expect(midnight!.label).toBe('9/23 0时')
+    expect(ticks.some(t => t.label === '15时')).toBe(true) // 同日内纯时刻
+  })
 })
