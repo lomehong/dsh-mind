@@ -91,6 +91,30 @@ export async function fetchFeed(n = 200): Promise<FeedStep[]> {
   return body.steps ?? []
 }
 
+export interface PromptBlockInfo {
+  key: 'menu' | 'rules' | 'outputFormat' | 'style'
+  label: string
+  default: string
+  current: string
+  overridden: boolean
+}
+
+export interface PromptsPayload {
+  ok: boolean
+  blocks: PromptBlockInfo[]
+  composed: string
+}
+
+export async function fetchPrompts(): Promise<PromptsPayload> {
+  const resp = await fetch('/dsh-mind/prompts')
+  return (await resp.json()) as PromptsPayload
+}
+
+/** 保存提示词覆盖层：值为 null = 该块恢复内置默认。 */
+export function savePrompts(blocks: Record<string, string | null>): Promise<{ ok: boolean; error?: string }> {
+  return postJson('/dsh-mind/prompts', { blocks })
+}
+
 /** 轮询 hook：pollMs 轮询一次，refresh() 立即刷新。 */
 export function usePoll<T>(fn: () => Promise<T>, pollMs: number): { data?: T; error?: string; refresh(): void } {
   const [data, setData] = useState<T>()

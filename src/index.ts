@@ -21,6 +21,7 @@ import {
 import { loadState, saveState } from './state.ts'
 import { appendStep, archiveOldSteps, readTail, type TimelineStep } from './timeline.ts'
 import { buildWakePrompt } from './wake-prompt.ts'
+import { resolveCurrentBlocks } from './prompts.ts'
 
 export const name = 'dsh-mind'
 export const provide = ['dsh-mind']
@@ -146,6 +147,8 @@ export function apply(ctx: Context): void {
     } catch (e) {
       logger.warn?.('[dsh-mind] 生命概览失败（跳过）:', e instanceof Error ? e.message : String(e))
     }
+    // 提示词块：心智 Tab 覆盖层优先，缺席回落内置默认（每次唤醒现读，保存即生效）
+    const blocks = resolveCurrentBlocks()
     const prompt = buildWakePrompt({
       identityName: '分身',
       guard,
@@ -156,7 +159,7 @@ export function apply(ctx: Context): void {
       memories,
       pendingMessages: reactiveQueue.splice(0, reactiveQueue.length).map(q => ({ from: q.from, text: q.text })),
       now,
-    })
+    }, blocks)
 
     const result = await runner.runWake(ensured.sessionId, prompt)
     // 归类：[fn] 标记可能在 FINAL="..." 内（模型先自由叙述再给 FINAL 行），

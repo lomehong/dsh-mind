@@ -137,6 +137,15 @@ export function EngView({ status, refresh }: { status: StatusPayload | undefined
         </div>
       </Card>
 
+      {/* 提示词调教面 */}
+      <Card style={{ padding: '10px 14px 14px' }}>
+        <div style={{ fontSize: 12, color: SUB, marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ fontWeight: 600 }}>提示词</span>
+          <span style={{ fontSize: 11 }}>TA 每次唤醒读的行为文本——改完保存，下一拍即生效</span>
+        </div>
+        <PromptsEditor />
+      </Card>
+
       {/* 时间线 */}
       <Card style={{ padding: '10px 14px 6px' }}>
         <div style={{ fontSize: 12, color: SUB, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>

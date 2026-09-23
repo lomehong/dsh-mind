@@ -19,6 +19,8 @@ import type { MindConfig } from './config.ts'
 import { evaluateSpend, isQuietHour } from './scheduler.ts'
 import type { SchedulerState } from './scheduler.ts'
 import { readTail, type TimelineStep } from './timeline.ts'
+import { buildWakePrompt, DEFAULT_PROMPT_BLOCKS } from './wake-prompt.ts'
+import { loadPromptOverrides, PROMPT_BLOCK_KEYS, PROMPT_BLOCK_LABELS, resolveWakePromptBlocks, savePromptOverrides } from './prompts.ts'
 
 export interface PanelDeps {
   getConfig(): MindConfig
@@ -192,6 +194,51 @@ export function registerPanelApi(
       const n = Math.min(200, Math.max(1, Number(url.searchParams.get('n') ?? 50) || 50))
       const steps: TimelineStep[] = readTail(n).steps
       json(res, 200, { ok: true, steps })
+    },
+  })
+
+  // 提示词调教面：GET=默认+覆盖+骨架预览；PUT=写覆盖层（null/缺省键=恢复默认）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-mind/prompts',
+    handler: (req, res) => {
+      if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
+      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+      if (req.method === 'GET') {
+        const overrides = loadPromptOverrides()
+        const current = resolveWakePromptBlocks(overrides)
+        // 骨架预览：静态四块的组装形态（不含时间线等动态数据——那是每次唤醒的运行时上下文）
+        const composed = buildWakePrompt({
+          identityName: '分身', tail: [], now: new Date(),
+        }, current)
+        const blocks = PROMPT_BLOCK_KEYS.map(key => ({
+          key,
+          label: PROMPT_BLOCK_LABELS[key],
+          default: DEFAULT_PROMPT_BLOCKS[key],
+          current: current[key],
+          overridden: overrides[key] !== undefined,
+        }))
+        return json(res, 200, { ok: true, blocks, composed })
+      }
+      if (req.method !== 'PUT' && req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' })
+      if (!writeGate(req, res)) return
+      void (async () => {
+        try {
+          const body = JSON.parse(await readBody(req)) as { blocks?: Record<string, unknown> }
+          const incoming = body.blocks ?? body
+          const overrides = loadPromptOverrides()
+          for (const key of PROMPT_BLOCK_KEYS) {
+            const v = (incoming as Record<string, unknown>)[key]
+            if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) delete overrides[key]
+            else if (typeof v === 'string') overrides[key] = v.slice(0, 20000)
+            else return json(res, 400, { ok: false, error: `${key} 必须为字符串或 null` })
+          }
+          savePromptOverrides(overrides)
+          json(res, 200, { ok: true, overrides })
+        } catch (e) {
+          json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) })
+        }
+      })()
     },
   })
 }

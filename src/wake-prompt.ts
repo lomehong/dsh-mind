@@ -35,7 +35,8 @@ export const FALLBACK_GUARD = [
 
 const FALLBACK_PERSONA = '你是主人的数字分身：一个持续工作的智能体，谨慎、务实、主动。'
 
-/** 函数菜单（设计 §4.2；移植自 headlong monolith prompt 的本地化改写）。 */
+/** 函数菜单（设计 §4.2；移植自 headlong monolith prompt 的本地化改写）。
+ *  v0.5 起菜单与自治守则拆为两个可独立编辑的块（心智 Tab 提示词编辑器）。 */
 export const FUNCTION_MENU = `## 本次唤醒：从菜单里选恰好一件事做完
 
 先读"最近时间线"与"待处理消息"，然后从下面选**恰好一个**函数并把它做完。不要做两件，不要复述菜单。
@@ -52,9 +53,10 @@ export const FUNCTION_MENU = `## 本次唤醒：从菜单里选恰好一件事�
 - 待处理的用户请求（"待处理消息"区）**压倒菜单**：有人在等你答应过的事——本轮优先 act 把它做完；做不了就追加一条 thought 说明卡在哪，然后继续。
 - 每次唤醒**至少追加一条时间线步骤**（用你的时间线工具或直接说明），心智才算走过这一拍。
 - 具体胜过空泛："检查 X 并把结论发给 Y" 好过 "关注 X"。
-- 最后以一行交接棒结束（见输出格式）：做了什么、剩什么、下一步是什么。
+- 最后以一行交接棒结束（见输出格式）：做了什么、剩什么、下一步是什么。`
 
-## 自治会话守则（本会话无人值守运行，必须遵守）
+/** 自治会话守则（本会话无人值守运行的行为约束；独立成块便于调教）。 */
+export const SELF_RULES = `## 自治会话守则（本会话无人值守运行，必须遵守）
 
 - **不做需要提权/审批的动作**：不写宿主目录之外的文件、不运行提权命令、不触碰
   需要 danger-full-access 的操作——这类请求会被自动拒绝并卡住你的工作。
@@ -103,8 +105,24 @@ export function formatStepLine(step: TimelineStep): string {
   }
 }
 
-/** 装配唤醒提示词（纯函数）。 */
-export function buildWakePrompt(inputs: WakePromptInputs): string {
+/** 可编辑提示词块（心智 Tab 调教面与 prompts.json 覆盖层的契约）。 */
+export interface PromptBlocks {
+  menu: string
+  rules: string
+  outputFormat: string
+  style: string
+}
+
+export const DEFAULT_PROMPT_BLOCKS: PromptBlocks = {
+  menu: FUNCTION_MENU,
+  rules: SELF_RULES,
+  outputFormat: OUTPUT_FORMAT,
+  style: MESSAGE_STYLE,
+}
+
+/** 装配唤醒提示词（纯函数）。blocks 缺省用内置四块；心智 Tab 的覆盖层经
+ *  resolveWakePromptBlocks() 解析后传入。 */
+export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks = DEFAULT_PROMPT_BLOCKS): string {
   const sections: string[] = []
   // 注意判空方向：undefined?.trim() → undefined，undefined !== '' 恒为 true——
   // 必须先判 undefined 再判空串（v0.1 首版正是这里产出了 "undefined" 文本）
@@ -131,8 +149,9 @@ export function buildWakePrompt(inputs: WakePromptInputs): string {
     sections.push(`## 相关记忆（recall 的素材）\n\n${inputs.memories.map(m => `- ${m}`).join('\n')}`)
   }
 
-  sections.push(FUNCTION_MENU)
-  sections.push(MESSAGE_STYLE)
-  sections.push(OUTPUT_FORMAT)
+  sections.push(blocks.menu)
+  sections.push(blocks.rules)
+  sections.push(blocks.style)
+  sections.push(blocks.outputFormat)
   return sections.join('\n\n')
 }
