@@ -136,6 +136,7 @@ export function EngView({ status, refresh }: { status: StatusPayload | undefined
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: 11, color: SUB }}>
           <span>待处理观察 {status.pending ?? 0}</span>
           {(status.pendingApprovals ?? 0) > 0 && <span style={{ color: WARN }}>待主人批准 {status.pendingApprovals}</span>}
+          {(status.openAsks ?? 0) > 0 && <span style={{ color: WARN }}>等你给 {status.openAsks}{status.openAskPreview !== undefined ? `：${status.openAskPreview}` : ''}</span>}
           <span>软顶 {fmtUsd(spend.softCapUsd)} · 硬顶 {fmtUsd(spend.hardCapUsd)}</span>
         </div>
       </Card>

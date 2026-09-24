@@ -21,8 +21,8 @@ export interface TimelineStep {
   content: string
   /** 仅 wake 步骤：触发源 */
   trigger?: 'spontaneous' | 'reactive' | 'event' | 'watchdog'
-  /** 仅 wake 步骤：函数选择 */
-  fn?: 'act' | 'share' | 'think' | 'learn' | 'recall' | 'goals' | 'idle'
+  /** 仅 wake 步骤：函数选择（ask = 向主人开单，P5 §6.5） */
+  fn?: 'act' | 'share' | 'ask' | 'think' | 'learn' | 'recall' | 'goals' | 'idle'
   /** 仅 wake 步骤：FINAL 交接棒 */
   final?: string
   /** 仅 wake 步骤：用量与成本 */

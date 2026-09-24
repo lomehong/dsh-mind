@@ -16,6 +16,7 @@ import { WakeRunner } from './runner.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
 import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
+import { dueEscalations, openAsk, parseAskPayload, settleAsksByGoal, type AskEntry } from './asks.ts'
 import { readRollups } from './rollups.ts'
 import { tryRollup } from './summarizer.ts'
 import { diffWorld } from './worldwatch.ts'
@@ -157,6 +158,8 @@ export function apply(ctx: Context): void {
     let memories: string[] = []
     // P4 goals 精化：同一装载派生「当前目标」（[目标] 标记条目，结清同题即移除）
     let goalsActive: Array<{ title: string; ts: string }> = []
+    // P5 请求账结清联动：目标 [目标·完成]/[目标·放弃] 销账 → 关联 ask 自动结清（§6.5）
+    let settledGoalTitles: string[] = []
     try {
       const memory = ctx.get('dsh-memory') as
         | { loadSharedMemory?(): Array<{ content: string }>; filterMemoriesForRead?(e: unknown[]): unknown[] }
@@ -167,6 +170,10 @@ export function apply(ctx: Context): void {
           : memory.loadSharedMemory()) as Array<{ content: string; ts?: string }>
         memories = entries.slice(-8).map(e => e.content)
         goalsActive = settleGoals(extractGoalEntries(entries), entries).slice(-5)
+        settledGoalTitles = entries
+          .map(e => e.content.trimStart())
+          .filter(c => /^\[目标·(完成|放弃)\]/.test(c))
+          .map(c => c.replace(/^\[目标·(完成|放弃)\]\s*/, '').slice(0, 200))
       }
     } catch { /* 记忆缺席 → 空召回 */ }
 
@@ -214,6 +221,13 @@ export function apply(ctx: Context): void {
       recentActivity,
       pendingMessages: reactiveQueue.splice(0, reactiveQueue.length).map(q => ({ from: q.from, text: q.text })),
       stalePendings: stalePendings(loadState().openPendings, now.getTime()),
+      openAsks: (state.openAsks ?? [])
+        .filter(a => a.state === 'open')
+        .map(a => {
+          const t = Date.parse(a.ts)
+          const ageHours = Number.isNaN(t) ? 0 : Math.max(0, Math.round((now.getTime() - t) / 3_600_000))
+          return { ageHours, what: a.what, ...(a.howto !== undefined ? { howto: a.howto } : {}) }
+        }),
       now,
     }, blocks)
 
@@ -221,8 +235,8 @@ export function apply(ctx: Context): void {
     // 归类：[fn] 标记可能在 FINAL="..." 内（模型先自由叙述再给 FINAL 行），
     // 全文搜首个标记；idle 优先按 fn 判定——误判 think 会让退避永不生长（v0.2.1 实测事故）
     const fn = fnOf(result.final)
-    const finalText = result.final.replace(/^\[\s*(?:act|share|think|learn|recall|goals|idle)\s*\]\s*/i, '')
-    const outcome: WakeOutcome = fn === 'idle' ? 'empty' : outcomeOf(finalText, result.toolCalls)
+    const finalText = result.final.replace(/^\[\s*(?:act|share|ask|think|learn|recall|goals|idle)\s*\]\s*/i, '')
+    const outcome: WakeOutcome = fn === 'idle' ? 'empty' : fn === 'ask' ? 'engaged' : outcomeOf(finalText, result.toolCalls)
     const cost = costUsd(cfg, result.tokensIn, result.tokensOut)
 
     // 台账推进（按日清零）+ 时间线 + 退避推进 + 下次排程
@@ -244,6 +258,40 @@ export function apply(ctx: Context): void {
     // P2.1 承诺账：act/share（或真动了工具）= 对唤醒前挂起的主人消息出手 → 清账
     if (fn === 'act' || fn === 'share' || result.toolCalls > 0) {
       state.openPendings = resolvePendingsBefore(state.openPendings, now.toISOString())
+    }
+    // P5 请求账（§6.5）：目标销账联动结清 + ask 开单入账（入账即一次性投递）
+    state.openAsks = settleAsksByGoal(state.openAsks ?? [], settledGoalTitles)
+    if (fn === 'ask') {
+      const payload = parseAskPayload(finalText)
+      if (payload.what !== '') {
+        const entry: AskEntry = {
+          id: `a-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          seq: state.lastSeq,
+          ts: now.toISOString(),
+          what: payload.what,
+          ...(payload.why !== undefined ? { why: payload.why } : {}),
+          ...(payload.howto !== undefined ? { howto: payload.howto } : {}),
+          ...(payload.goalTitle !== undefined ? { goalTitle: payload.goalTitle } : {}),
+          state: 'open',
+          notifiedAt: Date.now(),
+        }
+        const opened = openAsk(state.openAsks, entry)
+        state.openAsks = opened.list
+        if (opened.duplicated) {
+          logger.info?.('[dsh-mind] ask 同文请求已在案（指纹去重），仅留痕不重发')
+        } else {
+          const lines = [`我在等一样东西才能继续：${payload.what}。`]
+          if (payload.why !== undefined) lines.push(`为了：${payload.why}。`)
+          if (payload.howto !== undefined) lines.push(`你给了之后我会：${payload.howto}。`)
+          void deliverToChannels({ to: 'master', text: lines.join('') })
+            .then(r => {
+              if (r.delivered === 0) logger.warn?.('[dsh-mind] ask 无渠道可投递（面板「等待主人」徽标承载）')
+            })
+            .catch(() => { /* 投递失败不阻塞主流程；升级节流会再试 */ })
+        }
+      } else {
+        logger.warn?.('[dsh-mind] ask 开单缺 what（FINAL 格式不符），未入账')
+      }
     }
     state.idleStreak = 0 // 真实唤醒打断机械空醒连拍
     state.lastWakeAt = Date.now() // 锚定到唤醒【结束】：世界观察的回显抑制窗从结束点起算
@@ -275,7 +323,7 @@ export function apply(ctx: Context): void {
 
   function fnOf(final: string): NonNullable<TimelineStep['fn']> {
     // 标记可能在文本中部（FINAL="..." 内），全文搜首个；找不到再看 idle 文本形态
-    const m = final.match(/\[(act|share|think|learn|recall|goals|idle)\]/i)
+    const m = final.match(/\[(act|share|ask|think|learn|recall|goals|idle)\]/i)
     if (m !== null) return m[1]!.toLowerCase() as NonNullable<TimelineStep['fn']>
     if (/^idle\b/i.test(final.trim()) || /本拍\s*idle/i.test(final)) return 'idle'
     return 'think'
@@ -397,6 +445,20 @@ export function apply(ctx: Context): void {
           v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'idle', source: 'mind',
           content: `空醒短路：无新观察、无待办，上一拍亦空转——略过本次思考。（连续空醒 ${streak} 拍）`,
         })
+      }
+      // P5 请求账升级（§6.5）：>24h 未结清每 24h 节流重投递——机械拍也能触达主人
+      const escalations = dueEscalations(s.openAsks ?? [], Date.now())
+      if (escalations.length > 0) {
+        const nowMs = Date.now()
+        s.openAsks = (s.openAsks ?? []).map(a =>
+          escalations.some(e => e.id === a.id) ? { ...a, lastEscalatedAt: nowMs } : a)
+        for (const a of escalations) {
+          const t = Date.parse(a.ts)
+          const ageH = Number.isNaN(t) ? 24 : Math.max(1, Math.round((nowMs - t) / 3_600_000))
+          void deliverToChannels({ to: 'master', text: `提醒：我还在等「${a.what}」，已经 ${ageH} 小时了。给了我就继续。` })
+            .catch(() => { /* 升级投递失败：下个升级窗再试 */ })
+        }
+        logger.info?.(`[dsh-mind] 请求账升级重投递 ${escalations.length} 条`)
       }
       s.lastWakeAt = Date.now()
       const advanced = advanceAfterWake(s, 'empty', cfgNow)

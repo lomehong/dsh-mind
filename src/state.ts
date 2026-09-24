@@ -13,6 +13,7 @@ export const STATE_DEFAULT: SchedulerState = {
   lastSeq: 0,
   pendingApprovals: 0,
   openPendings: [],
+  openAsks: [],
   idleStreak: 0,
   spend: { date: '1970-01-01', usedUsd: 0, tokensIn: 0, tokensOut: 0, llmCalls: 0 },
   reactive: { windowStart: 0, count: 0 },
@@ -39,6 +40,15 @@ export function loadState(): SchedulerState {
         && typeof (p as { ts?: unknown }).ts === 'string'
         && typeof (p as { text?: unknown }).text === 'string')
       : []
+    // openAsks 防护（P5 请求账）：非数组/坏条目丢弃；state 非 open 视为已结清
+    base.openAsks = Array.isArray(base.openAsks)
+      ? base.openAsks.filter(a =>
+        a !== null && typeof a === 'object'
+        && typeof (a as { id?: unknown }).id === 'string'
+        && typeof (a as { ts?: unknown }).ts === 'string'
+        && typeof (a as { what?: unknown }).what === 'string'
+        && (a as { state?: unknown }).state === 'open')
+      : []
     return base
   } catch {
     return {
@@ -46,6 +56,7 @@ export function loadState(): SchedulerState {
       spend: { ...STATE_DEFAULT.spend },
       reactive: { ...STATE_DEFAULT.reactive },
       openPendings: [],
+      openAsks: [],
     }
   }
 }

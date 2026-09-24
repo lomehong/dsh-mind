@@ -3,6 +3,7 @@
  * 全部无副作用、无时钟读取（now 由调用方注入）——确定性可测（G8）。
  */
 import type { MindConfig } from './config.ts';
+import type { AskEntry } from './asks.ts';
 /** 调度状态（持久化于 run/state.json；重启恢复）。 */
 export interface SchedulerState {
     /** 退避档位（0=全速连转） */
@@ -48,6 +49,8 @@ export interface SchedulerState {
         ts: string;
         text: string;
     }>;
+    /** P5 请求账：等主人的解锁请求（§6.5 方向二；不参与短路——等待零心跳成本） */
+    openAsks: AskEntry[];
     /** 连续机械空醒计数（密度治理：每 IDLE_STEP_EVERY 拍才落一条 idle 步骤） */
     idleStreak: number;
     /** 世界观察指纹（看板/记忆在两次唤醒间的状态快照；undefined=未吸收过） */

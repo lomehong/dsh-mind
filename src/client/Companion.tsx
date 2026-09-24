@@ -191,6 +191,11 @@ function CareMini({ status, refresh }: { status: StatusPayload | undefined; refr
         {(status.pendingApprovals ?? 0) > 0 && (
           <span style={{ color: 'var(--dsw-alias-state-warn-primary, #b8860b)' }}>{status.pendingApprovals} 件等你点头</span>
         )}
+        {(status.openAsks ?? 0) > 0 && (
+          <span style={{ color: 'var(--dsw-alias-state-warn-primary, #b8860b)' }}>
+            {status.openAsks} 件等你给{status.openAskPreview !== undefined ? `：${status.openAskPreview}` : ''}
+          </span>
+        )}
         <span>软顶 {fmtUsd(spend.softCapUsd)}</span>
       </div>
       <div>

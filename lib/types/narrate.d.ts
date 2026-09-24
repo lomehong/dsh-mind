@@ -56,6 +56,10 @@ export interface PresenceInput {
     };
     /** 注入 pending 消息数（对 TA 说话后 TA 还没醒时 >0）。 */
     pending?: number;
+    /** P5 请求账：等待主人的 open 请求数（§6.5——存在语义之外的依赖语义）。 */
+    openAsks?: number;
+    /** 最早一条请求的 what（存在句素材）。 */
+    openAskWhat?: string;
 }
 /** 在场感一句话：TA 现在怎么样（第一人称）。 */
 export declare function presenceLine(s: PresenceInput, now?: number): string;

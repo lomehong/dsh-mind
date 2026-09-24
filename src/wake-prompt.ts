@@ -25,6 +25,8 @@ export interface WakePromptInputs {
   pendingMessages?: ReadonlyArray<{ from: string; text: string }> | undefined
   /** 久悬未结清的主人消息（P2.1 承诺账：>24h 升级为提醒） */
   stalePendings?: ReadonlyArray<{ ageHours: number; text: string }> | undefined
+  /** P5 请求账：等待主人的 open 请求（每拍注入——不忘自己在等什么，§6.5） */
+  openAsks?: ReadonlyArray<{ ageHours: number; what: string; howto?: string }> | undefined
   /** 主人关心的长期事项（missions.md——分身安静时的议程来源） */
   missions?: string | undefined
   /** 主人最近在做的事（最近会话标题，截断；分身的「主人在忙什么」感知） */
@@ -51,6 +53,9 @@ export const FUNCTION_MENU = `## 本次唤醒：从菜单里选恰好一件事�
 
 - **act** — 有具体的事要做（待处理消息、明显的下一步）。用你的工具真正做完，然后以一行 \`observation\` 记录发生了什么。
 - **share** — 你最近发现/做成/想清楚的事，对**某个具体的人**有价值。用一条消息发给他（结论先行、平实句子、不复述问题、不署名不客套）。同一发现只发一次，绝不状态问候。24 小时内发过的内容系统会拒绝重复。
+- **ask** — 目标的下一步需要主人提供/授权/到场时，向主人发起**一次**结构化请求：
+  说清「要什么｜为了：…｜给了之后：…｜目标：…」，运行时经渠道送达并入账跟踪
+  （§6.5），同文请求不会重复投递。开单后照常推进其他工作——不硬撑等待。
 - **think** — 推进思绪一步：追加一条 \`thought\`，必须向前走（新角度或决定），不复述上一步。
 - **learn** — 最近的一对"动作+结果"里有值得长期记住的教训/事实/偏好 → 存入记忆（先检索防重），再记一条 \`thought\`。
 - **recall** — 某条已有记忆与当前相关但还没用上 → 检索并以 1–3 条 \`thought\` 呈现（"我想起：…"）。
@@ -59,6 +64,7 @@ export const FUNCTION_MENU = `## 本次唤醒：从菜单里选恰好一件事�
 
 规则：
 - 待处理的用户请求（"待处理消息"区）**压倒菜单**：有人在等你答应过的事——本轮优先 act 把它做完；做不了就追加一条 thought 说明卡在哪，然后继续。
+- 目标的下一步卡在主人输入（缺凭据/授权/窗口）时，**ask 压倒硬撑**：先开单，再推进能推进的部分。
 - 世界安静时也不躺平：长期事项与主人近况是你可以持续耕作的地——复盘、预研、做准备、把想到的有用结论存进记忆（learn）。
 - 每次唤醒**至少追加一条时间线步骤**（用你的时间线工具或直接说明），心智才算走过这一拍。
 - 具体胜过空泛："检查 X 并把结论发给 Y" 好过 "关注 X"。
@@ -71,8 +77,9 @@ export const SELF_RULES = `## 自治会话守则（本会话无人值守运行�
   需要 danger-full-access 的操作——这类请求会被自动拒绝并卡住你的工作。
 - **对外/跨工作区的实质动作**一律改用 task_delegate 交治理流程（账本裁决后由
   执行会话完成），而不是自己直接动手。
-- 动作被拒绝时：记一条 observation 说明"此类动作需主人批准后经治理路径执行"，
-  然后继续其他工作，不要反复重试同一动作。`
+- 动作被拒绝时：若是缺主人输入/授权/在场所致，用 **ask** 向主人开单一次（要什么/
+  为什么/给了之后/关联目标），然后继续其他工作；其余情况记一条 observation 说明
+  原因后继续。两者都不要反复重试同一动作，也不把阻塞咽进散文不提。`
 
 /** 输出格式说明。 */
 export const OUTPUT_FORMAT = `## 输出格式（必须遵守）
@@ -82,9 +89,12 @@ export const OUTPUT_FORMAT = `## 输出格式（必须遵守）
 
 FINAL="[act] <一句话：本次做了什么；还剩什么；下一步>"
 
-各函数的标签：[act] [share] [think] [learn] [recall] [goals]；idle 写：
+各函数的标签：[act] [share] [ask] [think] [learn] [recall] [goals]；idle 写：
 
 FINAL="[idle] Idle — <一句话原因>"
+
+若本次是 ask 开单：FINAL="[ask] <要什么>｜为了：<为什么>｜给了之后：<下一步>｜目标：<关联目标标题>"
+（目标段可选；运行时经请求账投递主人并跟踪，FINAL 之外不要再重复请求内容。）
 
 若本次是 share/交付：FINAL="[share] <收件人> 已收到：<一句话内容>。"
 不要输出 FINAL 之外的结尾客套。`
@@ -157,6 +167,11 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   if (inputs.stalePendings !== undefined && inputs.stalePendings.length > 0) {
     const lines = inputs.stalePendings.map(p => `- 悬置 ${p.ageHours} 小时：「${p.text}」——要么本轮处理，要么追加一条 thought 明说放下（说了就要算数）`)
     sections.push(`## 悬置提醒（久未结清的主人消息）\n\n${lines.join('\n')}`)
+  }
+  if (inputs.openAsks !== undefined && inputs.openAsks.length > 0) {
+    const lines = inputs.openAsks.map(a =>
+      `- 悬置 ${a.ageHours} 小时：「${a.what}」${a.howto !== undefined ? `（给了之后：${a.howto}）` : ''}`)
+    sections.push(`## 等待主人的请求（已投递在案；主人回应前不重复开单，关联目标完成时自动销账）\n\n${lines.join('\n')}`)
   }
 
   if (inputs.tail.length > 0) {

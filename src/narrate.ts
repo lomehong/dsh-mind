@@ -148,8 +148,12 @@ export interface PresenceInput {
   quiet?: { enabled: boolean; active: boolean; start: string; end: string }
   wakeAt: number
   spend?: { usedUsd: number; hardCapUsd: number }
-  /** 注入 pending 消息数（对 TA 说话后 TA 还没醒时 >0）。 */
+   /** 注入 pending 消息数（对 TA 说话后 TA 还没醒时 >0）。 */
   pending?: number
+  /** P5 请求账：等待主人的 open 请求数（§6.5——存在语义之外的依赖语义）。 */
+  openAsks?: number
+  /** 最早一条请求的 what（存在句素材）。 */
+  openAskWhat?: string
 }
 
 /** 在场感一句话：TA 现在怎么样（第一人称）。 */
@@ -159,6 +163,7 @@ export function presenceLine(s: PresenceInput, now = Date.now()): string {
   if (s.quiet?.active === true) return `我睡着了（${s.quiet.start}–${s.quiet.end}），醒来会继续`
   if (s.running) return '我正在想事情……'
   if (s.spend !== undefined && s.spend.usedUsd >= s.spend.hardCapUsd) return '我今天想得够多了，在省着用（明天继续）'
+  if ((s.openAsks ?? 0) > 0) return `有件事卡住了，等你给${s.openAskWhat !== undefined ? `：${s.openAskWhat}` : ''}`
   if ((s.pending ?? 0) > 0) return '我刚收到你的话，正在准备回应……'
   if (s.wakeAt > now) {
     const mins = Math.round((s.wakeAt - now) / 60000)

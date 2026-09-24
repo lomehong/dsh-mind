@@ -17,6 +17,8 @@ export interface StatusPayload {
   spendLevel?: 'normal' | 'soft' | 'hard'
   pending?: number
   pendingApprovals?: number
+  openAsks?: number
+  openAskPreview?: string
   quiet?: { enabled: boolean; active: boolean; start: string; end: string; tz: string }
   tail: Array<{ seq: number; ts: string; type: string; source: string; content: string; fn?: string }>
 }
