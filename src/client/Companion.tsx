@@ -9,10 +9,34 @@ import { fetchFeed, fetchStatus, setMindStopped, usePoll, type StatusPayload } f
 import { Being } from './Being.tsx'
 import { Composer } from './Composer.tsx'
 import { fmtClock, fmtUsd } from './format.tsx'
+import { openTwinTodos } from './nav.ts'
 
 const POLL_STATUS_MS = 25000
 const POLL_FEED_MS = 20000
 const SUB = 'var(--dsw-alias-label-secondary, #888)'
+const WARN = 'var(--dsw-alias-state-warn-primary, #b8860b)'
+
+/** 「等你给」角标：存在体右上的待答复条数，点击直达数字分身·今日待办逐条答复。 */
+function AskBadge({ count }: { count: number }): JSX.Element {
+  return (
+    <span
+      role="button"
+      aria-label={`${count} 件事等你答复`}
+      title={`${count} 件事等你给——点击去逐条答复`}
+      onClick={(e: React.MouseEvent) => { e.stopPropagation(); openTwinTodos() }}
+      style={{
+        position: 'absolute', top: -3, right: -5, zIndex: 1,
+        minWidth: 19, height: 19, padding: '0 5px', borderRadius: 10,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        background: WARN, color: '#fff', fontSize: 11, fontWeight: 700, lineHeight: '19px',
+        border: '1.5px solid var(--dsw-alias-bg-overlay, rgba(24,26,30,.97))',
+        boxShadow: '0 1px 5px rgba(0,0,0,.35)', cursor: 'pointer', userSelect: 'none',
+      }}
+    >
+      {count > 9 ? '9+' : count}
+    </span>
+  )
+}
 
 /** 展开面板的折叠分节（display:flex 去掉 details 默认三角，自定义箭头）。 */
 function Section({ summary, children }: { summary: string; children: React.ReactNode }): JSX.Element {
@@ -39,6 +63,7 @@ export function CompanionLayer(): JSX.Element {
   const [open, setOpen] = useState(false)
   const status = usePoll(fetchStatus, POLL_STATUS_MS)
   const st = status.data
+  const asks = st?.openAsks ?? 0
   return (
     <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 2147483000, pointerEvents: 'none' }}>
       {open && (
@@ -71,6 +96,30 @@ export function CompanionLayer(): JSX.Element {
             ×
           </button>
 
+          {/* 请求单提醒条（openAsks>0 时置顶）：一键去今日待办逐条答复 */}
+          {asks > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 10,
+              border: `1px solid color-mix(in srgb, ${WARN} 40%, transparent)`,
+            }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: WARN }}>
+                有 {asks} 件事等你给{st?.openAskPreview !== undefined ? `：${st.openAskPreview}` : ''}
+              </span>
+              <button
+                type="button"
+                title="跳到数字分身 · 今日待办，逐条答复"
+                onClick={() => { setOpen(false); openTwinTodos() }}
+                style={{
+                  padding: '3px 10px', cursor: 'pointer', borderRadius: 8, fontSize: 12, flexShrink: 0,
+                  border: `1px solid color-mix(in srgb, ${WARN} 45%, transparent)`,
+                  color: WARN, background: 'transparent', whiteSpace: 'nowrap',
+                }}
+              >
+                去处理 →
+              </button>
+            </div>
+          )}
+
           {/* 头部：存在体 + 在场句 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingRight: 22 }}>
             <Being size={62} status={st} />
@@ -92,17 +141,18 @@ export function CompanionLayer(): JSX.Element {
         </div>
       )}
 
-      {/* 常驻存在体（点击开合） */}
+      {/* 常驻存在体（点击开合；右上角角标=等你给的条数，点角标直达今日待办） */}
       <div style={{ pointerEvents: 'auto', display: 'flex', justifyContent: 'flex-end' }}>
         <div
           role="button"
           title={st !== undefined ? presenceLine(st) : '分身'}
           onClick={() => setOpen(o => !o)}
-          style={{ cursor: 'pointer', padding: 6, borderRadius: '9999px', transition: 'transform .18s ease' }}
+          style={{ position: 'relative', cursor: 'pointer', padding: 6, borderRadius: '9999px', transition: 'transform .18s ease' }}
           onMouseEnter={(e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.08)' }}
           onMouseLeave={(e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
         >
           <Being size={56} status={st} />
+          {asks > 0 && <AskBadge count={asks} />}
         </div>
       </div>
     </div>

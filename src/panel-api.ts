@@ -10,6 +10,9 @@
  * - GET  /dsh-mind/token   下发写门禁键（sameOrigin；供内置客户端一次性取用）
  * - GET  /dsh-mind/status  在场感状态（v3：+静音时段/下次唤醒/待批数/反应队列）
  * - GET  /dsh-mind/timeline 时间线尾部（生活流数据源；n 上限 200）
+ * - GET  /dsh-mind/asks    请求账 open 清单（P5 §6.5；数字分身「今日待办」数据源）
+ * - POST /dsh-mind/asks/answer 主人答复请求单（结清该单 + 答复作为 message_in
+ *   落时间线 + 反应性唤醒——按 openAsk 的 howto 分支立即执行）
  * - POST /dsh-mind/kill    休息开关（stopped: boolean）
  * - POST /dsh-mind/say     主人留言（text → message_in 落时间线 + 反应性唤醒）
  */
@@ -34,6 +37,8 @@ export interface PanelDeps {
   pendingApprovals(): number
   /** 主人留言：message_in 落时间线 + 反应性唤醒。 */
   say(text: string): void
+  /** P5 请求账答复：结清指定请求单 + 答复经 say 同路径注入（返回 false = 单不存在/已结清）。 */
+  answerAsk(id: string, answer: string): boolean
   /** P4 goals 精化：当前活跃目标（读侧提取自 dsh-memory [目标] 标记条目）。 */
   activeGoals(): Array<{ title: string; ts: string }>
 }
@@ -183,6 +188,60 @@ export function registerPanelApi(
           if (text.length === 0) return json(res, 400, { ok: false, error: '想说的话不能为空' })
           if (text.length > 2000) return json(res, 400, { ok: false, error: '一次最多说 2000 字' })
           deps.say(text)
+          json(res, 200, { ok: true })
+        } catch (e) {
+          json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) })
+        }
+      })()
+    },
+  })
+
+  // P5 请求账（§6.5）：GET open 清单（数字分身「今日待办」的请求单数据源）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-mind/asks',
+    handler: (req, res) => {
+      if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
+      if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method not allowed' })
+      const now = Date.now()
+      const asks = (Array.isArray(deps.getState().openAsks) ? deps.getState().openAsks : [])
+        .filter(a => a !== null && typeof a === 'object' && a.state === 'open' && typeof a.what === 'string')
+        .sort((x, y) => Date.parse(x.ts) - Date.parse(y.ts))
+        .map(a => {
+          const t = Date.parse(a.ts)
+          return {
+            id: a.id,
+            seq: a.seq,
+            ts: a.ts,
+            what: a.what,
+            ...(a.why !== undefined ? { why: a.why } : {}),
+            ...(a.howto !== undefined ? { howto: a.howto } : {}),
+            ...(a.goalTitle !== undefined ? { goalTitle: a.goalTitle } : {}),
+            ageHours: Number.isNaN(t) ? 0 : Math.max(0, Math.round((now - t) / 3_600_000)),
+          }
+        })
+      json(res, 200, { ok: true, asks })
+    },
+  })
+
+  // P5 请求账答复：结清该单 + 答复沿 /say 同路径注入（message_in + 反应性唤醒，
+  // TA 按请求单的 howto 分支立即执行；答复文本入 openPendings——不吞单）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-mind/asks/answer',
+    handler: (req, res) => {
+      if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' })
+      if (!writeGate(req, res)) return
+      void (async () => {
+        try {
+          const body = JSON.parse(await readBody(req)) as { id?: unknown; answer?: unknown }
+          const id = typeof body.id === 'string' ? body.id.trim() : ''
+          const answer = typeof body.answer === 'string' ? body.answer.trim() : ''
+          if (id === '') return json(res, 400, { ok: false, error: '缺少请求单 id' })
+          if (answer.length === 0) return json(res, 400, { ok: false, error: '答复内容不能为空' })
+          if (answer.length > 2000) return json(res, 400, { ok: false, error: '一次最多答复 2000 字' })
+          const settled = deps.answerAsk(id, answer)
+          if (!settled) return json(res, 404, { ok: false, error: '请求单不存在或已结清' })
           json(res, 200, { ok: true })
         } catch (e) {
           json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) })

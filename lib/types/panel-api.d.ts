@@ -12,6 +12,8 @@ export interface PanelDeps {
     pendingApprovals(): number;
     /** 主人留言：message_in 落时间线 + 反应性唤醒。 */
     say(text: string): void;
+    /** P5 请求账答复：结清指定请求单 + 答复经 say 同路径注入（返回 false = 单不存在/已结清）。 */
+    answerAsk(id: string, answer: string): boolean;
     /** P4 goals 精化：当前活跃目标（读侧提取自 dsh-memory [目标] 标记条目）。 */
     activeGoals(): Array<{
         title: string;

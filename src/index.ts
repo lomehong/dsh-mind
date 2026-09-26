@@ -16,7 +16,7 @@ import { WakeRunner } from './runner.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
 import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
-import { dueEscalations, openAsk, parseAskPayload, settleAsksByGoal, type AskEntry } from './asks.ts'
+import { dueEscalations, openAsk, parseAskPayload, settleAsk, settleAsksByGoal, type AskEntry } from './asks.ts'
 import { readRollups } from './rollups.ts'
 import { tryRollup } from './summarizer.ts'
 import { diffWorld } from './worldwatch.ts'
@@ -93,6 +93,19 @@ export function apply(ctx: Context): void {
     reactiveQueued: (): number => reactiveQueue.length,
     pendingApprovals: (): number => loadState().pendingApprovals ?? 0,
     say: (text: string): void => injectObservation('主人', text, { source: 'web' }),
+    /** P5 请求账答复：结清该单 + 答复按 say 同路径注入（§6.5「主人消息消化」结清路径
+     *  的显式版——数字分身今日待办逐条答复用；账本只存 open，结算即移除并留痕时间线）。 */
+    answerAsk(id: string, answer: string): boolean {
+      const state = loadState()
+      const ask = (state.openAsks ?? []).find(a => a !== null && typeof a === 'object' && a.id === id && a.state === 'open')
+      if (ask === undefined) return false
+      state.openAsks = settleAsk(state.openAsks ?? [], id)
+      saveState(state)
+      // 答复正文引用原请求（what），TA 在下一拍（反应性唤醒）无需翻账即可接上 howto 分支
+      injectObservation('主人', `回应你的请求「${ask.what}」：${answer}`, { source: 'web' })
+      logger.info?.(`[dsh-mind] 请求单已结清（${id}）：主人已答复`)
+      return true
+    },
     activeGoals: (): Array<{ title: string; ts: string }> => readActiveGoals(),
   }
 

@@ -24,6 +24,10 @@ agency 模型并按 DSH 套件治理架构本地化。
 - **常驻存在体（右下角）**：TA 住在整个 dsh 窗口里（shell.overlay 全帧浮层，
   不拦截操作）——任何页面右下角都有 TA 在呼吸，点击就地展开面板：看见 TA、
   对 TA 说话、翻 TA 最近的生活、照看 TA
+- **「等你给」提醒与答复闭环（v0.10.0）**：存在体右上角角标实时显示待答复请求单
+  条数，点角标（或面板「去处理」）直达数字分身·今日待办逐条答复；HTTP 面新增
+  `GET /dsh-mind/asks`（open 清单）与 `POST /dsh-mind/asks/answer`（结清该单 +
+  答复沿 /say 同路径注入 message_in 并反应性唤醒——§6.5「主人消息消化」的显式版）
 - **入口**：conversation.view「心智」Tab（当前宿主）+ main/sidebar.panellist
   （新宿主自动升级）+ 插件页人物卡
 
