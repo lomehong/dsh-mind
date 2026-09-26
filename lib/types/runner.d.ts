@@ -13,7 +13,12 @@ export interface WakeRunnerOptions {
     timeoutMs: number;
     resetThresholdTokens: number;
     pollIntervalMs?: number;
+    /** create 重试间隔（ms；默认 4000。测试注入 0——确定性 G8） */
+    createRetryMs?: number;
 }
+/** 暂态服务错误（宿主重启窗口 sessionController 未就绪等 gateway/service-unavailable）。
+ *  这类失败短退避重试即可自愈，不落红色 error 步骤、不进 +3 强退避（v0.10.2）。 */
+export declare function isTransientServiceError(error: unknown): boolean;
 export interface WakeRunResult {
     final: string;
     toolCalls: number;
@@ -35,8 +40,11 @@ export declare class WakeRunner {
     private readonly gw;
     private readonly opts;
     private readonly pollMs;
+    private readonly createRetryMs;
     constructor(gw: GatewayClient, opts: WakeRunnerOptions);
-    /** 确保心智会话存在（复用；缺失/超阈值时重建）。 */
+    /** 确保心智会话存在（复用；缺失/超阈值时重建）。
+     *  v0.10.2：create 短退避重试——宿主重启窗口内 sessionController 尚未注册
+     *  （实测启动后 ~9s 即可触发唤醒），一次性失败不抛出，3 次尝试后才放弃。 */
     ensureSession(currentId: string | undefined, lastTokensIn: number): Promise<{
         sessionId: string;
         reset: boolean;

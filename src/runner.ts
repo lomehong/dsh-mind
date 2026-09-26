@@ -14,6 +14,15 @@ export interface WakeRunnerOptions {
   timeoutMs: number
   resetThresholdTokens: number
   pollIntervalMs?: number
+  /** create 重试间隔（ms；默认 4000。测试注入 0——确定性 G8） */
+  createRetryMs?: number
+}
+
+/** 暂态服务错误（宿主重启窗口 sessionController 未就绪等 gateway/service-unavailable）。
+ *  这类失败短退避重试即可自愈，不落红色 error 步骤、不进 +3 强退避（v0.10.2）。 */
+export function isTransientServiceError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('service-unavailable') || message.includes('is unavailable')
 }
 
 export interface WakeRunResult {
@@ -50,15 +59,19 @@ function textOf(content: ReadonlyArray<{ type?: string; text?: string }> | undef
 
 export class WakeRunner {
   private readonly pollMs: number
+  private readonly createRetryMs: number
 
   constructor(
     private readonly gw: GatewayClient,
     private readonly opts: WakeRunnerOptions,
   ) {
     this.pollMs = opts.pollIntervalMs ?? 2000
+    this.createRetryMs = opts.createRetryMs ?? 4000
   }
 
-  /** 确保心智会话存在（复用；缺失/超阈值时重建）。 */
+  /** 确保心智会话存在（复用；缺失/超阈值时重建）。
+   *  v0.10.2：create 短退避重试——宿主重启窗口内 sessionController 尚未注册
+   *  （实测启动后 ~9s 即可触发唤醒），一次性失败不抛出，3 次尝试后才放弃。 */
   async ensureSession(currentId: string | undefined, lastTokensIn: number): Promise<{ sessionId: string; reset: boolean }> {
     if (currentId !== undefined && lastTokensIn < this.opts.resetThresholdTokens) {
       try {
@@ -66,12 +79,21 @@ export class WakeRunner {
         if ((list.items ?? []).some(i => i.sessionId === currentId)) return { sessionId: currentId, reset: false }
       } catch { /* list 失败：按需重建 */ }
     }
-    const created = (await this.gw.invoke('session', 'create', { agentPreset: this.opts.presetId })) as { sessionId: string }
-    const sessionId = created.sessionId
-    try {
-      await this.gw.invoke('session', 'rename', { sessionId, title: this.opts.title })
-    } catch { /* 改名失败不影响功能 */ }
-    return { sessionId, reset: true }
+    let lastError: unknown
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const created = (await this.gw.invoke('session', 'create', { agentPreset: this.opts.presetId })) as { sessionId: string }
+        const sessionId = created.sessionId
+        try {
+          await this.gw.invoke('session', 'rename', { sessionId, title: this.opts.title })
+        } catch { /* 改名失败不影响功能 */ }
+        return { sessionId, reset: true }
+      } catch (error) {
+        lastError = error
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, this.createRetryMs))
+      }
+    }
+    throw lastError
   }
 
   /** 投递唤醒提示词并等待本轮 turn/end；按认领的 turn 号抽取 FINAL 与用量。

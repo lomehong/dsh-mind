@@ -12,7 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { loadMindConfig, mindHome, type MindConfig } from './config.ts'
 import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
-import { WakeRunner } from './runner.ts'
+import { isTransientServiceError, WakeRunner } from './runner.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
 import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
@@ -361,7 +361,10 @@ export function apply(ctx: Context): void {
         content: '上次运行中断（宿主重启）：该唤醒显式弃单，只续排程不续执行',
       })
       state.running = false
-      state.wakeAt = Date.now() + 5000
+      // v0.10.2：+20s——宿主装配（sessionController 注册等）需要十几秒，
+      // +5s 实测必踩「active Service is unavailable」（2026-09-26 23:42 三连）；
+      // 即便仍早，runner 的 create 重试 + 暂态静默重排会兜住。
+      state.wakeAt = Date.now() + 20_000
       saveState(state)
       logger.warn?.('[dsh-mind] 检测到中断的唤醒，已显式弃单')
     }
@@ -532,6 +535,19 @@ export function apply(ctx: Context): void {
       running = true
       void runWake(decision)
         .catch((error: unknown) => {
+          // 暂态服务错误（宿主重启窗口 sessionController 未就绪等）：runner 已
+          // 重试 3 次仍失败 → 静默短排（60s 后再试），不落红色 error 步骤、
+          // 不进 +3 强退避——重启窗口的抖动不该污染 UI 与退避档位（v0.10.2）。
+          if (isTransientServiceError(error)) {
+            logger.warn?.(`[dsh-mind] 服务暂不可用（${decision.trigger}），60s 后重试:`, error instanceof Error ? error.message : String(error))
+            try {
+              const s = loadState()
+              s.running = false
+              s.wakeAt = Date.now() + 60_000
+              saveState(s)
+            } catch { /* 双重失败：等 watchdog */ }
+            return
+          }
           // 错误退避：失败按 empty 快进 + 显式 error 步骤（errored run ≠ idle）；
           // 超时错误携带的部分用量照常入台账（token 已计费，不能流失）
           try {
