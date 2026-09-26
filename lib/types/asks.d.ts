@@ -56,3 +56,8 @@ export declare function parseAskPayload(text: string): {
     howto?: string;
     goalTitle?: string;
 };
+/** 从 FINAL 文本解析显式结清标记（v0.10.1，§6.5 结清路径之三：TA 自查销账）。
+ *  约定：FINAL 任意位置 `[ask/ok <id>]`，可多张（如 `[ask/ok a-1] [ask/ok a-2]`）。
+ *  场景：请求单的前提已消失（身份卡已填好/所等凭据已另有来源）或已另行办结——
+ *  防止「开单时为真、之后一直为假」的过时请求单悬置等主人（v0.10 实测事故）。 */
+export declare function parseAskSettleIds(text: string): string[];

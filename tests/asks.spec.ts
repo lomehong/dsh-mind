@@ -13,6 +13,7 @@ import {
   dueEscalations,
   openAsk,
   parseAskPayload,
+  parseAskSettleIds,
   settleAsk,
   settleAsksByGoal,
   staleAsks,
@@ -121,7 +122,7 @@ describe('parseAskPayload', () => {
 })
 
 describe('buildWakePrompt 注入「等待主人的请求」区块', () => {
-  it('有 open 请求时注入区块（含悬置时长与 howto）；无请求时不注入', () => {
+  it('有 open 请求时注入区块（含 id、悬置时长与 howto）；无请求时不注入', () => {
     const base = {
       identityName: '分身',
       tail: [],
@@ -129,11 +130,12 @@ describe('buildWakePrompt 注入「等待主人的请求」区块', () => {
     }
     const withAsks = buildWakePrompt({
       ...base,
-      openAsks: [{ ageHours: 30, what: 'npm 凭据与发布授权', howto: '绑定执行窗口发布' }],
+      openAsks: [{ id: 'a-1', ageHours: 30, what: 'npm 凭据与发布授权', howto: '绑定执行窗口发布' }],
     }, DEFAULT_PROMPT_BLOCKS)
     expect(withAsks).toContain('## 等待主人的请求')
-    expect(withAsks).toContain('悬置 30 小时：「npm 凭据与发布授权」')
+    expect(withAsks).toContain('[a-1] 悬置 30 小时：「npm 凭据与发布授权」')
     expect(withAsks).toContain('（给了之后：绑定执行窗口发布）')
+    expect(withAsks).toContain('[ask/ok') // 自查销账协议提示
 
     const withoutAsks = buildWakePrompt({ ...base }, DEFAULT_PROMPT_BLOCKS)
     expect(withoutAsks).not.toContain('## 等待主人的请求')
@@ -143,5 +145,20 @@ describe('buildWakePrompt 注入「等待主人的请求」区块', () => {
     const prompt = buildWakePrompt({ identityName: '分身', tail: [], now: new Date() }, DEFAULT_PROMPT_BLOCKS)
     expect(prompt).toContain('**ask**')
     expect(prompt).toContain('[ask]')
+  })
+})
+
+describe('parseAskSettleIds（[ask/ok <id>] 显式销账标记）', () => {
+  it('解析单个与多个标记，去重保序', () => {
+    expect(parseAskSettleIds('查完了，身份卡已有名字。[ask/ok a-1234-abcd]')).toEqual(['a-1234-abcd'])
+    expect(parseAskSettleIds('[ask/ok a-1] 顺带这张也结了 [ask/ok a-2]')).toEqual(['a-1', 'a-2'])
+    expect(parseAskSettleIds('重复 [ask/ok a-1] 再提一次 [ask/ok a-1]')).toEqual(['a-1'])
+  })
+
+  it('无标记/坏格式返回空数组；不误伤 [ask] 开单标记', () => {
+    expect(parseAskSettleIds('没有任何标记')).toEqual([])
+    expect(parseAskSettleIds('[ask] 凭据｜为了：发布｜给了之后：发版')).toEqual([])
+    expect(parseAskSettleIds('[ask/ok] 缺 id')).toEqual([])
+    expect(parseAskSettleIds('[ask/ok 带空格 id]')).toEqual([])
   })
 })

@@ -28,6 +28,9 @@ agency 模型并按 DSH 套件治理架构本地化。
   条数，点角标（或面板「去处理」）直达数字分身·今日待办逐条答复；HTTP 面新增
   `GET /dsh-mind/asks`（open 清单）与 `POST /dsh-mind/asks/answer`（结清该单 +
   答复沿 /say 同路径注入 message_in 并反应性唤醒——§6.5「主人消息消化」的显式版）
+- **过时请求单自查销账（v0.10.1）**：请求单以 id 注入唤醒提示词；TA 核对前提已
+  消失（如身份卡已填好、凭据另有来源）或已另行办结时，在 FINAL 用 `[ask/ok <id>]`
+  自主结清——不再让「开单时为真、之后一直为假」的请求单悬着等主人
 - **入口**：conversation.view「心智」Tab（当前宿主）+ main/sidebar.panellist
   （新宿主自动升级）+ 插件页人物卡
 

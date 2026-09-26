@@ -33,8 +33,10 @@ export interface WakePromptInputs {
         ageHours: number;
         text: string;
     }> | undefined;
-    /** P5 请求账：等待主人的 open 请求（每拍注入——不忘自己在等什么，§6.5） */
+    /** P5 请求账：等待主人的 open 请求（每拍注入——不忘自己在等什么，§6.5）。
+     *  v0.10.1 起 id 入提示词：前提已消失时 TA 可在 FINAL 用 [ask/ok <id>] 自查销账。 */
     openAsks?: ReadonlyArray<{
+        id: string;
         ageHours: number;
         what: string;
         howto?: string;

@@ -25,8 +25,9 @@ export interface WakePromptInputs {
   pendingMessages?: ReadonlyArray<{ from: string; text: string }> | undefined
   /** 久悬未结清的主人消息（P2.1 承诺账：>24h 升级为提醒） */
   stalePendings?: ReadonlyArray<{ ageHours: number; text: string }> | undefined
-  /** P5 请求账：等待主人的 open 请求（每拍注入——不忘自己在等什么，§6.5） */
-  openAsks?: ReadonlyArray<{ ageHours: number; what: string; howto?: string }> | undefined
+  /** P5 请求账：等待主人的 open 请求（每拍注入——不忘自己在等什么，§6.5）。
+   *  v0.10.1 起 id 入提示词：前提已消失时 TA 可在 FINAL 用 [ask/ok <id>] 自查销账。 */
+  openAsks?: ReadonlyArray<{ id: string; ageHours: number; what: string; howto?: string }> | undefined
   /** 主人关心的长期事项（missions.md——分身安静时的议程来源） */
   missions?: string | undefined
   /** 主人最近在做的事（最近会话标题，截断；分身的「主人在忙什么」感知） */
@@ -170,8 +171,14 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   }
   if (inputs.openAsks !== undefined && inputs.openAsks.length > 0) {
     const lines = inputs.openAsks.map(a =>
-      `- 悬置 ${a.ageHours} 小时：「${a.what}」${a.howto !== undefined ? `（给了之后：${a.howto}）` : ''}`)
-    sections.push(`## 等待主人的请求（已投递在案；主人回应前不重复开单，关联目标完成时自动销账）\n\n${lines.join('\n')}`)
+      `- [${a.id}] 悬置 ${a.ageHours} 小时：「${a.what}」${a.howto !== undefined ? `（给了之后：${a.howto}）` : ''}`)
+    sections.push(
+      `## 等待主人的请求（已投递在案；主人回应前不重复开单，关联目标完成时自动销账）\n\n` +
+      `${lines.join('\n')}\n\n` +
+      `开单前先核对前提是否仍然成立——若某张请求单所等的东西已不再需要` +
+      `（如身份卡已填好、所缺凭据已另有来源、你已另行办结），本拍选 think 并在 FINAL 末尾用 ` +
+      `[ask/ok <id>] 结清该单（可多张），不要让过时请求单一直悬着等主人。`,
+    )
   }
 
   if (inputs.tail.length > 0) {

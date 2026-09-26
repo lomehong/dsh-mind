@@ -16,7 +16,7 @@ import { WakeRunner } from './runner.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
 import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
-import { dueEscalations, openAsk, parseAskPayload, settleAsk, settleAsksByGoal, type AskEntry } from './asks.ts'
+import { dueEscalations, openAsk, parseAskPayload, parseAskSettleIds, settleAsk, settleAsksByGoal, type AskEntry } from './asks.ts'
 import { readRollups } from './rollups.ts'
 import { tryRollup } from './summarizer.ts'
 import { diffWorld } from './worldwatch.ts'
@@ -239,7 +239,7 @@ export function apply(ctx: Context): void {
         .map(a => {
           const t = Date.parse(a.ts)
           const ageHours = Number.isNaN(t) ? 0 : Math.max(0, Math.round((now.getTime() - t) / 3_600_000))
-          return { ageHours, what: a.what, ...(a.howto !== undefined ? { howto: a.howto } : {}) }
+          return { id: a.id, ageHours, what: a.what, ...(a.howto !== undefined ? { howto: a.howto } : {}) }
         }),
       now,
     }, blocks)
@@ -272,7 +272,15 @@ export function apply(ctx: Context): void {
     if (fn === 'act' || fn === 'share' || result.toolCalls > 0) {
       state.openPendings = resolvePendingsBefore(state.openPendings, now.toISOString())
     }
-    // P5 请求账（§6.5）：目标销账联动结清 + ask 开单入账（入账即一次性投递）
+    // P5 请求账（§6.5）：目标销账联动结清 + TA 显式自查销账（[ask/ok <id>]）+ ask 开单入账
+    const settleIds = parseAskSettleIds(finalText)
+    if (settleIds.length > 0) {
+      const before = state.openAsks ?? []
+      state.openAsks = before.filter(a => !settleIds.includes(a.id))
+      for (const id of settleIds) {
+        if (before.some(a => a.id === id)) logger.info?.(`[dsh-mind] 请求单已结清（${id}）：TA 显式销账（前提已消失/另行办结）`)
+      }
+    }
     state.openAsks = settleAsksByGoal(state.openAsks ?? [], settledGoalTitles)
     if (fn === 'ask') {
       const payload = parseAskPayload(finalText)
