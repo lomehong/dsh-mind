@@ -2,3 +2,4 @@ node_modules/
 *.tsbuildinfo
 package-lock.json
 lib/client.js.map
+*.tgz
