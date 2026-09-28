@@ -31,6 +31,13 @@ agency 模型并按 DSH 套件治理架构本地化。
 - **过时请求单自查销账（v0.10.1）**：请求单以 id 注入唤醒提示词；TA 核对前提已
   消失（如身份卡已填好、凭据另有来源）或已另行办结时，在 FINAL 用 `[ask/ok <id>]`
   自主结清——不再让「开单时为真、之后一直为假」的请求单悬着等主人
+- **分身工具面（v0.10.5）**：`mind_status` / `mind_timeline` / `mind_say` 三工具经
+  digital-twin 预设行（`@dsh-extra/dsh-mind/tools`，dsh-twin 探测到本包已装才追加）
+  注入分身会话——主人问「你在忙什么/你的心智在干什么」时可查证如实回答；
+  唤醒提示词同步增加「你的心智本体（自知）」段：唤醒 run 不再把自己当外人去
+  node_modules 里「找心智插件」（2026-09-28 事故：IM 会话答「我没有心智插件」）。
+  status/timeline 走本地文件直读（心智未运行也如实回报）；say 经 dsh-mind 服务
+  惰性注入，缺席显式降级（宪章原则二）
 - **入口**：conversation.view「心智」Tab（当前宿主）+ main/sidebar.panellist
   （新宿主自动升级）+ 插件页人物卡
 

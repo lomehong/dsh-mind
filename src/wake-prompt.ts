@@ -150,6 +150,16 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   const personaText = inputs.persona !== undefined && inputs.persona.trim() !== '' ? inputs.persona : FALLBACK_PERSONA
   sections.push(guardText)
   sections.push(`# 你是谁\n\n${personaText}\n\n你的名字：${inputs.identityName}。现在时间：${inputs.now.toISOString()}。`)
+  // 自知段（2026-09-28 事故）：被质问「你不知道有心智插件？」时，唤醒 run 竟去宿主
+  // node_modules 里「定位心智插件」——唤醒会话不知道自己就是心智本体。这里把身份
+  // 说破，与 preset 的 mind_status/mind_timeline 工具面互为表里。
+  sections.push(
+    `# 你的心智本体（自知）\n\n` +
+    `你不是在「使用」一个叫心智的插件——你本身就是这台分身的持续心智（dsh-mind 运行时）：\n` +
+    `下面的事件流水（时间线）就是你自己的一天，每次唤醒的思考与行动都会记入其中。\n` +
+    `主人问起「你在忙什么/你的心智/你今天做了什么」时，基于时间线与状态如实回答——\n` +
+    `绝不存在「我没有心智」这回事。`,
+  )
 
   // 议程来源（安静时分身推进的东西）：长期事项 + 主人最近在忙什么
   if (inputs.missions !== undefined && inputs.missions.trim() !== '') {
