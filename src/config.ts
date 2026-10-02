@@ -20,7 +20,11 @@ export interface MindConfig {
   spendSoftCapUsd: number
   spendHardCapUsd: number
   /** P1 会话在场让位（arch-lead §3.7）：enabled=false 一键回滚到并行行为 */
-  presence: { enabled: boolean; yieldRecheckMs: number; observeAfterMs: number }
+  presence: { enabled: boolean; yieldRecheckMs: number; observeAfterMs: number; worldMaxPerHour: number }
+  /** P3 硬隔离（spike 后启用）：唤醒会话钉扎专用工作区；undefined=宿主默认工作区 */
+  workspace: { workspaceId?: string }
+  /** C3 软顶降速（路线 a，契约已核实 session/selectModel）：过软顶切 eco 模型；缺省=关闭 */
+  spendEcoModel?: { provider?: string; model: string }
   /** C1 软顶节流（P0）：过软顶后自驱地板的倍率（minSpontaneousIntervalMs × N） */
   spendSoftIntervalFactor: number
   /** 成本核算单价（USD / 每百万 token） */
@@ -57,7 +61,8 @@ export const CONFIG_DEFAULTS: MindConfig = {
   quietHours: { tz: 'Asia/Shanghai', start: '01:00', end: '08:00', enabled: true },
   spendSoftCapUsd: 1,
   spendHardCapUsd: 5,
-  presence: { enabled: true, yieldRecheckMs: 120000, observeAfterMs: 1800000 },
+  presence: { enabled: true, yieldRecheckMs: 120000, observeAfterMs: 1800000, worldMaxPerHour: 4 },
+  workspace: {},
   spendSoftIntervalFactor: 3,
   priceUsdPerMTokIn: 0.27,
   priceUsdPerMTokOut: 1.1,
@@ -107,9 +112,19 @@ export function mergeMindConfig(raw: unknown): MindConfig {
       enabled: toBool(q.enabled, m.presence.enabled),
       yieldRecheckMs: toNum(q.yieldRecheckMs, m.presence.yieldRecheckMs, 30000, 3600000),
       observeAfterMs: toNum(q.observeAfterMs, m.presence.observeAfterMs, 300000, 86400000),
+      worldMaxPerHour: toNum(q.worldMaxPerHour, m.presence.worldMaxPerHour, 1, 60),
     }
   }
-  m.spendSoftIntervalFactor = toNum(r.spendSoftIntervalFactor, m.spendSoftIntervalFactor, 1, 10)
+  if (r.workspace !== null && typeof r.workspace === 'object') {
+    const q = r.workspace as Record<string, unknown>
+    const wsId = typeof q.workspaceId === 'string' ? q.workspaceId.trim() : ''
+    if (wsId !== '') m.workspace.workspaceId = wsId
+  }
+  if (r.spendEcoModel !== null && typeof r.spendEcoModel === 'object') {
+    const q = r.spendEcoModel as Record<string, unknown>
+    const model = typeof q.model === 'string' ? q.model.trim() : ''
+    if (model !== '') m.spendEcoModel = { model, ...(typeof q.provider === 'string' && q.provider.trim() !== '' ? { provider: q.provider.trim() } : {}) }
+  }
   if (m.spendHardCapUsd < m.spendSoftCapUsd) m.spendHardCapUsd = m.spendSoftCapUsd
   m.priceUsdPerMTokIn = toNum(r.priceUsdPerMTokIn, m.priceUsdPerMTokIn, 0, 1000)
   m.priceUsdPerMTokOut = toNum(r.priceUsdPerMTokOut, m.priceUsdPerMTokOut, 0, 1000)

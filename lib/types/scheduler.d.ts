@@ -56,8 +56,22 @@ export interface SchedulerState {
     idleStreak: number;
     /** 世界观察指纹（看板/记忆在两次唤醒间的状态快照；undefined=未吸收过） */
     worldFingerprint?: string;
-    /** 最近一次成功采样的看板列分布（世界观察「缺席≠空」：fetch 失败时沿用，P0 止血） */
-    worldTaskCols?: Record<string, number>;
+    /** 最近一次成功采样的看板任务明细（世界观察 v2「缺席≠空」+ id→列 精确归因） */
+    worldBoard?: Array<{
+        id: string;
+        column: string;
+        originBy?: string;
+    }>;
+    /** P2 二次采样确认窗：首见差异落此，20s 后复采仍在才注入 */
+    pendingWorldDiff?: {
+        fp: string;
+        firstSeenAt: number;
+    };
+    /** P2 世界源独立预算（小时键 → 注入计数；世界不是回应人，不占 G3 配额） */
+    worldInjects?: {
+        hourKey: string;
+        count: number;
+    };
     /** 被拒审批的时间戳列表（24h 滚动衰减；pendingApprovals = 窗口内条数。
      *  修复 concurrence-sre F9：旧实现只增不清，一次拒绝后空醒短路永久失效） */
     approvalRejections?: number[];

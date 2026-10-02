@@ -1,67 +1,113 @@
 /**
- * 世界观察（分身的感知器官）：监测任务看板与记忆库在两次唤醒之间的变化。
+ * 世界观察（分身的感知器官）v2——归因代替时限（concurrence-sre §3.2，
+ * 10-01 唤醒列车事故：58 拍 LLM/$0.958，指纹无归因 + 90s 窗被打穿）。
  *
- * 为什么需要：分身的唤醒素材只有自己的时间线——世界安静它就只能空转。
- * 看板有任务流转、记忆库有新条目（主人/其他代理写入），都是「有事可干」的
- * 真实信号。变化 → 注入观察 → 反应性唤醒（事件触发永不下钻短路，G3）。
- *
- * 防自激：唤醒收尾时会静默吸收自己造成的变化（task_delegate 落板、learn
- * 写记忆），只有**别人**造成的变化才触发观察。
+ * v2 变化：
+ * - 看板侧：任务 id→列 映射（精确到任务，不再只有列计数）＋ originBy 归因
+ *   （心智立项的任务，其全部后续列变化都算「自己造成的」，搭车消化不唤醒）；
+ * - 记忆侧：条数 + maxSeq + maxTs 内容签名（第三方转写回声无法归因 → 走
+ *   checkWorld 的二次采样确认，不再靠固定时间窗）；
+ * - diffWorld 输出逐条 changes（含 selfCaused 归因），注入/搭车分流由调用方决策。
  */
 
-export interface WorldCounts {
-  /** 看板各列的任务数（待规划/待办/进行中/已完成/已失败） */
-  taskCols: Record<string, number>
-  /** 记忆库条目数 */
-  memoryCount: number
+/** 看板任务快照（/dsh-task-board/state 的 tasks 已含 id/column/originBy）。 */
+export interface BoardTaskSnapshot {
+  id: string
+  column: string
+  /** P1.5 立项调用方会话 id（心智立项的任务可归因为「自己造成的」） */
+  originBy?: string
 }
 
-export interface WorldDiff {
+/** 记忆条目快照（dsh-memory 条目的最小投影）。 */
+export interface MemorySnapshot {
+  content: string
+  ts?: string
+  seq?: number
+  /** dsh-memory 契约的来源标注（learn 路径带会话来源；缺席→无法归因） */
+  sourceOrigin?: string
+}
+
+export interface WorldCountsV2 {
+  board: ReadonlyArray<BoardTaskSnapshot>
+  memoryCount: number
+  memoryMaxSeq?: number
+  memoryMaxTs?: string
+}
+
+export interface WorldChange {
+  desc: string
+  selfCaused: boolean
+}
+
+export interface WorldDiffV2 {
   /** 新指纹（调用方持久化） */
   fp: string
   /** 变化描述（null = 无变化或首次吸收） */
   desc: string | null
+  /** 逐条变化（含归因；desc 非 null 时与 desc 同源） */
+  changes: ReadonlyArray<WorldChange>
 }
 
-/** 世界指纹（稳定的键序）。 */
-export function fingerprintOf(counts: WorldCounts): string {
-  const cols = Object.keys(counts.taskCols).sort()
-  const part = cols.map(c => `${c}:${counts.taskCols[c]}`).join(',')
-  return JSON.stringify({ c: part, m: counts.memoryCount })
+/** 世界指纹 v2（任务 id→列 有序映射 + 记忆内容签名）。 */
+export function fingerprintOf(counts: WorldCountsV2): string {
+  const board = [...counts.board]
+    .map(t => `${t.id}:${t.column}`)
+    .sort()
+    .join(',')
+  const mem = `${counts.memoryCount}:${counts.memoryMaxSeq ?? 0}:${counts.memoryMaxTs ?? ''}`
+  return JSON.stringify({ b: board, m: mem })
 }
 
-function parseFp(fp: string | undefined): WorldCounts | null {
+function parseFp(fp: string | undefined): { board: Map<string, string>; memoryCount: number } | null {
   if (fp === undefined || fp === '') return null
   try {
-    const raw = JSON.parse(fp) as { c?: string; m?: number }
-    const cols: Record<string, number> = {}
-    for (const pair of (raw.c ?? '').split(',')) {
-      const [k, n] = pair.split(':')
-      if (k !== '' && k !== undefined) cols[k] = Number(n) || 0
+    const raw = JSON.parse(fp) as { b?: string; m?: string }
+    const board = new Map<string, string>()
+    for (const pair of (raw.b ?? '').split(',')) {
+      const [id, col] = pair.split(':')
+      if (id !== '' && id !== undefined && col !== undefined) board.set(id, col)
     }
-    return { taskCols: cols, memoryCount: raw.m ?? 0 }
+    // m 为 v2 复合签名（count:maxSeq:maxTs）——条数取首段；v1 旧指纹（纯数字）兼容
+    const memoryCount = Number((raw.m ?? '0').split(':')[0]) || 0
+    return { board, memoryCount }
   } catch {
     return null
   }
 }
 
-/** 差异计算（纯函数）：prevFp 缺席 = 首次吸收（不产生描述）。 */
-export function diffWorld(prevFp: string | undefined, counts: WorldCounts): WorldDiff {
+/**
+ * 差异计算 v2（纯函数）：prevFp 缺席 = 首次吸收（不产生描述）。
+ * 归因规则：看板侧「originBy ∈ mindIds 的任务的列变化」= 自己造成的（搭车消化）；
+ * 记忆侧无法归因（第三方转写不可区分）→ 一律按外部处理，由二次采样与节流兜底。
+ */
+export function diffWorldV2(
+  prevFp: string | undefined,
+  counts: WorldCountsV2,
+  mindIds: ReadonlySet<string>,
+): WorldDiffV2 {
   const fp = fingerprintOf(counts)
-  if (prevFp === undefined) return { fp, desc: null }
-  if (fp === prevFp) return { fp, desc: null }
+  if (prevFp === undefined) return { fp, desc: null, changes: [] }
   const prev = parseFp(prevFp)
-  const parts: string[] = []
-  if (prev !== null) {
-    const cols = new Set([...Object.keys(prev.taskCols), ...Object.keys(counts.taskCols)])
-    for (const c of cols) {
-      const before = prev.taskCols[c] ?? 0
-      const after = counts.taskCols[c] ?? 0
-      if (after !== before) parts.push(`看板「${c}」${after > before ? `+${after - before}` : after - before}`)
-    }
-    const dm = counts.memoryCount - prev.memoryCount
-    if (dm > 0) parts.push(`记忆库 +${dm} 条`)
+  if (prev === null) return { fp, desc: null, changes: [] }
+  if (fp === prevFp) return { fp, desc: null, changes: [] }
+
+  const changes: WorldChange[] = []
+  // 看板侧：id 级对比（新增/换列/消失）
+  const ids = new Set([...prev.board.keys(), ...counts.board.map(t => t.id)])
+  for (const id of ids) {
+    const before = prev.board.get(id)
+    const after = counts.board.find(t => t.id === id)?.column
+    if (before === after) continue
+    const t = counts.board.find(x => x.id === id)
+    const selfCaused = after !== undefined && t?.originBy !== undefined && mindIds.has(t.originBy)
+    const dir = after === undefined ? '已消失' : before === undefined ? `新增于「${after}」` : `「${before}」→「${after}」`
+    changes.push({ desc: `任务 ${id} ${dir}`, selfCaused })
   }
-  if (parts.length === 0) parts.push('有变化')
-  return { fp, desc: `世界观察：${parts.join('；')}` }
+  // 记忆侧（无法归因 → 外部）
+  const dm = counts.memoryCount - prev.memoryCount
+  if (dm !== 0) changes.push({ desc: `记忆库 ${dm > 0 ? `+${dm}` : dm} 条`, selfCaused: false })
+
+  if (changes.length === 0) return { fp, desc: null, changes: [] }
+  const desc = `世界观察：${changes.map(c => c.desc).join('；')}`
+  return { fp, desc, changes }
 }

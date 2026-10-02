@@ -15,6 +15,8 @@ export interface WakeRunnerOptions {
     pollIntervalMs?: number;
     /** create 重试间隔（ms；默认 4000。测试注入 0——确定性 G8） */
     createRetryMs?: number;
+    /** P3 硬隔离（spike 后启用）：唤醒会话钉扎专用工作区；undefined=宿主默认 */
+    workspaceId?: string;
 }
 /** 暂态服务错误（宿主重启窗口 sessionController 未就绪等 gateway/service-unavailable）。
  *  这类失败短退避重试即可自愈，不落红色 error 步骤、不进 +3 强退避（v0.10.2）。 */

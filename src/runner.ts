@@ -16,6 +16,8 @@ export interface WakeRunnerOptions {
   pollIntervalMs?: number
   /** create 重试间隔（ms；默认 4000。测试注入 0——确定性 G8） */
   createRetryMs?: number
+  /** P3 硬隔离（spike 后启用）：唤醒会话钉扎专用工作区；undefined=宿主默认 */
+  workspaceId?: string
 }
 
 /** 暂态服务错误（宿主重启窗口 sessionController 未就绪等 gateway/service-unavailable）。
@@ -82,7 +84,10 @@ export class WakeRunner {
     let lastError: unknown
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const created = (await this.gw.invoke('session', 'create', { agentPreset: this.opts.presetId })) as { sessionId: string }
+        const created = (await this.gw.invoke('session', 'create', {
+          agentPreset: this.opts.presetId,
+          ...(this.opts.workspaceId !== undefined ? { workspaceId: this.opts.workspaceId } : {}),
+        })) as { sessionId: string }
         const sessionId = created.sessionId
         try {
           await this.gw.invoke('session', 'rename', { sessionId, title: this.opts.title })

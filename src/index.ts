@@ -19,14 +19,14 @@ import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts
 import { dueEscalations, openAsk, parseAskPayload, parseAskSettleIds, settleAsk, settleAsksByGoal, type AskEntry } from './asks.ts'
 import { readRollups } from './rollups.ts'
 import { tryRollup } from './summarizer.ts'
-import { diffWorld } from './worldwatch.ts'
+import { diffWorldV2, type WorldCountsV2 } from './worldwatch.ts'
 import { loadMissions } from './missions.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, DEEP_THINK_EVERY, IDLE_STEP_EVERY, nextDelayMs, presenceGate, scheduleNextSpontaneous,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, DEEP_THINK_EVERY, evaluateSpend, IDLE_STEP_EVERY, nextDelayMs, presenceGate, scheduleNextSpontaneous,
   shouldShortCircuitSpontaneous,
   type SchedulerState, type TriggerDecision, type WakeOutcome,
 } from './scheduler.ts'
-import { loadState, saveState } from './state.ts'
+import { loadState, mutateState, reconcileSeqWithTail, saveState } from './state.ts'
 import { appendStep, archiveOldSteps, readTail, type TimelineStep } from './timeline.ts'
 import { buildWakePrompt } from './wake-prompt.ts'
 import { resolveCurrentBlocks } from './prompts.ts'
@@ -138,6 +138,8 @@ export function apply(ctx: Context): void {
     state.lastWakeAt = Date.now()
     state.running = true
     saveState(state)
+    // C2 软顶瘦身：过软顶后精简唤醒提示词（tokensIn 大头在装配）
+    const soft = evaluateSpend(state, cfg, now) === 'soft'
 
     const gwLike = ctx.get('typertGateway') as TypertGateway | undefined
     if (gwLike === undefined) throw new Error('typertGateway 缺席（宿主服务不可用）')
@@ -149,10 +151,28 @@ export function apply(ctx: Context): void {
       title: '🧠 mind',
       timeoutMs: cfg.wakeTimeoutMs * (firstWake ? 2 : 1),
       resetThresholdTokens: cfg.sessionResetTokens,
+      ...(cfg.workspace.workspaceId !== undefined ? { workspaceId: cfg.workspace.workspaceId } : {}),
     })
+    // P3 冲突台账：唤醒期间主人会话在场 → refs.masterActive 标记（活动视图
+    // 「今天 TA 在你忙时动过手 N 次」的计数来源）
+    const masterActiveAtWake = presenceSnapshot?.strongest === 'master-facing'
 
     // 底座会话：懒建复用（state.mindSessionId），超阈值重建
     const ensured = await runner.ensureSession(state.mindSessionId, state.spend.tokensIn)
+    // C3 软顶降速（路线 a，契约已核实 session/selectModel）：软顶且配置了
+    // eco 模型 → 会话级原地切换（不改全局默认；未配置 = 关闭）
+    if (cfg.spendEcoModel !== undefined && evaluateSpend(state, cfg, now) === 'soft') {
+      try {
+        await gw.invoke('session', 'selectModel', {
+          sessionId: ensured.sessionId,
+          ...(cfg.spendEcoModel.provider !== undefined ? { provider: cfg.spendEcoModel.provider } : {}),
+          model: cfg.spendEcoModel.model,
+        })
+        logger.info?.(`[dsh-mind] 软顶降速：会话已切换 eco 模型 ${cfg.spendEcoModel.model}`)
+      } catch (e) {
+        logger.warn?.('[dsh-mind] eco 模型切换失败（继续）:', e instanceof Error ? e.message : String(e))
+      }
+    }
     state = loadState()
     state.mindSessionId = ensured.sessionId
     if (ensured.reset) {
@@ -184,7 +204,7 @@ export function apply(ctx: Context): void {
         const entries = (memory.filterMemoriesForRead !== undefined
           ? memory.filterMemoriesForRead(memory.loadSharedMemory())
           : memory.loadSharedMemory()) as Array<{ content: string; ts?: string }>
-        memories = entries.slice(-8).map(e => e.content)
+        memories = entries.slice(-(soft === true ? 3 : 8)).map(e => e.content)
         goalsActive = settleGoals(extractGoalEntries(entries), entries).slice(-5)
         settledGoalTitles = entries
           .map(e => e.content.trimStart())
@@ -193,15 +213,20 @@ export function apply(ctx: Context): void {
       }
     } catch { /* 记忆缺席 → 空召回 */ }
 
+    // （soft 已在唤醒入口计算——见上）
     // readTail 返回新→旧；提示词区块按旧→新叙述
-    const tail = readTail(20).steps.slice().reverse()
+    const tail = readTail(soft ? 8 : 20).steps.slice().reverse()
+    // P2 seq 对账（R3 防重号）：崩溃残留可能让 timeline seq 领先 lastSeq——唤醒前取 max
+    reconcileSeqWithTail(state, tail.map(s => s.seq))
     // 生命概览（P3/P3.2）：LLM 语义摘要（有则优先）+ 机械分层，有界空间覆盖一生
     let lifeRecap = ''
-    try {
-      const { readAllSteps, renderLifeRecap, RECAP_FANOUT } = await import('./recap.ts')
-      lifeRecap = renderLifeRecap(readAllSteps(), cfg, RECAP_FANOUT, readRollups(8))
-    } catch (e) {
-      logger.warn?.('[dsh-mind] 生命概览失败（跳过）:', e instanceof Error ? e.message : String(e))
+    if (!soft) {
+      try {
+        const { readAllSteps, renderLifeRecap, RECAP_FANOUT } = await import('./recap.ts')
+        lifeRecap = renderLifeRecap(readAllSteps(), cfg, RECAP_FANOUT, readRollups(8))
+      } catch (e) {
+        logger.warn?.('[dsh-mind] 生命概览失败（跳过）:', e instanceof Error ? e.message : String(e))
+      }
     }
     // 提示词块：心智 Tab 覆盖层优先，缺席回落内置默认（每次唤醒现读，保存即生效）
     const blocks = resolveCurrentBlocks()
@@ -262,6 +287,7 @@ export function apply(ctx: Context): void {
       trigger: trigger.trigger, fn, content: finalText.slice(0, 400),
       final: finalText, usage: { llmCalls: 1, tokensIn: result.tokensIn, tokensOut: result.tokensOut, costUsd: cost },
       backoffLevel: state.backoffLevel,
+      ...(masterActiveAtWake ? { refs: { masterActive: fn === 'act' && result.toolCalls > 0 ? 'act' : '1' } } : {}),
     }
     appendStep(wakeStep)
     // P2.1 承诺账：act/share（或真动了工具）= 对唤醒前挂起的主人消息出手 → 清账
@@ -326,10 +352,12 @@ export function apply(ctx: Context): void {
     logger.info?.(`[dsh-mind] 唤醒完成 fn=${wakeStep.fn} outcome=${outcome} cost=$${cost.toFixed(4)}`)
 
     // P3.2 记忆卷积：凑满 F 条未摘要步骤才真正调用（异步尽力而为，失败静默——
-    // 机械 recap 兜底，绝不因摘要失败影响唤醒主流程）
-    void tryRollup({ gateway: gwLike, presetId: cfg.presetId })
-      .then(r => { if (!r.ok && r.reason !== undefined && r.reason !== 'not-due') logger.warn?.(`[dsh-mind] 卷积跳过: ${r.reason}`) })
-      .catch(() => { /* 静默 */ })
+    // 机械 recap 兜底，绝不因摘要失败影响唤醒主流程）。C2 软顶期暂缓（回 normal 补跑）。
+    if (!soft) {
+      void tryRollup({ gateway: gwLike, presetId: cfg.presetId })
+        .then(r => { if (!r.ok && r.reason !== undefined && r.reason !== 'not-due') logger.warn?.(`[dsh-mind] 卷积跳过: ${r.reason}`) })
+        .catch(() => { /* 静默 */ })
+    }
 
     // 世界观察：吸收自己造成的变化（task_delegate 落板/learn 写记忆不算"外部事件"）
     absorbWorld()
@@ -452,45 +480,99 @@ export function apply(ctx: Context): void {
   async function checkWorld(): Promise<void> {
     const cfgNow = loadMindConfig()
     if (!cfgNow.worldWatchEnabled) return
-    // P0 止血（缺席≠空）：fetch 失败时沿用上次成功采样参与指纹——旧实现把
-    // 「看板缺席」当「看板为空」吸收进指纹（实测指纹 {"c":"","m":214}），
-    // 看板恢复时还会误报一次全量变化
-    const lastCols = loadState().worldTaskCols
-    let taskCols: Record<string, number> | undefined
+    // P0 止血（缺席≠空）＋ P2 归因：fetch 失败时沿用上次成功采样；成功时构建
+    // 任务明细（id/column/originBy）与记忆签名，供 diffWorldV2 逐条归因
+    const lastCols = loadState().worldBoard
+    let board: WorldCountsV2['board'] | undefined
     try {
       const resp = await fetch(`${cfgNow.worldWatchUrl}/dsh-task-board/state`, { signal: AbortSignal.timeout(5000) })
-      const body = (await resp.json()) as { ok?: boolean; state?: { tasks?: Array<{ column?: string }> } }
-      const cols: Record<string, number> = {}
-      for (const t of body.state?.tasks ?? []) {
-        const c = t.column ?? '?'
-        cols[c] = (cols[c] ?? 0) + 1
+      const body = (await resp.json()) as { ok?: boolean; state?: { tasks?: Array<{ id?: string; column?: string; originBy?: string }> } }
+      const tasks = body.state?.tasks ?? []
+      if (tasks.some(t => typeof t.id === 'string' && typeof t.column === 'string')) {
+        board = tasks
+          .filter(t => typeof t.id === 'string' && typeof t.column === 'string')
+          .map(t => ({ id: t.id as string, column: t.column as string, ...(typeof t.originBy === 'string' ? { originBy: t.originBy } : {}) }))
       }
-      taskCols = cols
     } catch { /* 看板缺席/超时：沿用上次分布参与指纹 */ }
     const entries = readMemoryEntries()
-    const counts = { taskCols: taskCols ?? lastCols ?? {}, memoryCount: entries.length }
+    let memoryCount = 0
+    let memoryMaxSeq: number | undefined
+    let memoryMaxTs: string | undefined
+    for (const e of entries) {
+      memoryCount += 1
+      if (typeof e.seq === 'number' && (memoryMaxSeq === undefined || e.seq > memoryMaxSeq)) memoryMaxSeq = e.seq
+      if (typeof e.ts === 'string' && e.ts !== '' && (memoryMaxTs === undefined || e.ts > memoryMaxTs)) memoryMaxTs = e.ts
+    }
+    if (board === undefined && lastCols !== undefined) board = lastCols.map(t => ({ id: t.id, column: t.column, ...(t.originBy !== undefined ? { originBy: t.originBy } : {}) }))
+    const counts: WorldCountsV2 = {
+      board: board ?? [],
+      memoryCount,
+      ...(memoryMaxSeq !== undefined ? { memoryMaxSeq } : {}),
+      ...(memoryMaxTs !== undefined ? { memoryMaxTs } : {}),
+    }
     const s = loadState()
-    const diff = diffWorld(s.worldFingerprint, counts)
+    const mindIds = new Set<string>([s.mindSessionId].filter((v): v is string => typeof v === 'string' && v !== ''))
+    const diff = diffWorldV2(s.worldFingerprint, counts, mindIds)
     if (diff.fp === s.worldFingerprint) return
     s.worldFingerprint = diff.fp
-    if (taskCols !== undefined) s.worldTaskCols = taskCols
+    if (board !== undefined) s.worldBoard = board.map(t => ({ ...t }))
     // 自回显压制：唤醒【结束】90 秒内的世界变化多半是 TA 自己动作的回显
     // （absorbWorld 异步收尾与 20s 巡查 tick 有竞态窗口）——静默吸收不注入
     const recentWake = s.lastWakeAt > 0 && Date.now() - s.lastWakeAt < 90000
     saveState(s)
     if (diff.desc !== null && !running && !recentWake) {
-      // P1 让位期：世界变化入积压（cap 20，让位结束后的第一拍合并消化）——
-      // 既不丢信息，也不打断正在工作的主人会话（arch-lead M2 backlog 语义）
-      if (presenceSnapshot?.strongest === 'master-facing') {
-        const s2 = loadState()
-        const backlog = s2.backlog ?? []
-        if (!backlog.some(b => b.desc === diff.desc)) backlog.push({ desc: diff.desc, ts: new Date().toISOString() })
-        s2.backlog = backlog.slice(-20)
-        saveState(s2)
+      // P2 归因分流：selfCaused（心智立项的工作流余波）→ 积压搭车（下次自然
+      // 唤醒合并注入）；外部 → 让位期入积压（不打断主人会话），否则二次采样
+      // 确认 + 小时限频 + 硬顶静默后注入（世界不是回应人，不占 G3 配额）
+      const yielded = presenceSnapshot?.strongest === 'master-facing'
+      const external = diff.changes.filter(c => !c.selfCaused)
+      for (const c of diff.changes.filter(c => c.selfCaused)) {
+        const s3 = loadState()
+        const backlog = s3.backlog ?? []
+        if (!backlog.some(b => b.desc === c.desc)) backlog.push({ desc: c.desc, ts: new Date().toISOString() })
+        s3.backlog = backlog.slice(-20)
+        saveState(s3)
+      }
+      if (external.length === 0) return
+      if (yielded) {
+        const s3 = loadState()
+        const backlog = s3.backlog ?? []
+        for (const c of external) {
+          if (!backlog.some(b => b.desc === c.desc)) backlog.push({ desc: c.desc, ts: new Date().toISOString() })
+        }
+        s3.backlog = backlog.slice(-20)
+        saveState(s3)
         return
       }
-      logger.info?.(`[dsh-mind] ${diff.desc}——注入观察触发唤醒`)
-      injectObservation('世界', diff.desc, { source: '世界观察' })
+      // P2 二次采样确认：首见落 pendingWorldDiff 等 20s 复采；复采仍在才注入
+      const hourKey = new Date().toISOString().slice(0, 13)
+      const spendNow = evaluateSpend(s, cfgNow, new Date())
+      const injectedThisHour = s.worldInjects?.hourKey === hourKey ? s.worldInjects.count : 0
+      const pending = s.pendingWorldDiff
+      if (pending === undefined || pending.fp !== diff.fp) {
+        s.pendingWorldDiff = { fp: diff.fp, firstSeenAt: Date.now() }
+        saveState(s)
+        logger.info?.('[dsh-mind] 世界变化首见，等待二次采样确认')
+        return
+      }
+      if (spendNow === 'hard') {
+        delete s.pendingWorldDiff
+        saveState(s)
+        logger.info?.('[dsh-mind] 世界变化在硬顶期静默吸收')
+        return
+      }
+      if (injectedThisHour >= cfgNow.presence.worldMaxPerHour) {
+        delete s.pendingWorldDiff
+        saveState(s)
+        logger.warn?.(`[dsh-mind] 世界观察超过小时上限（${cfgNow.presence.worldMaxPerHour}/h），本轮静默吸收`)
+        return
+      }
+      s.worldInjects = { hourKey, count: injectedThisHour + 1 }
+      delete s.pendingWorldDiff
+      saveState(s)
+      const text = `世界观察：${external.map(c => c.desc).join('；')}`
+      logger.info?.(`[dsh-mind] ${text}——注入观察触发唤醒`)
+      reactiveQueue.push({ from: '世界', text })
     }
   }
 

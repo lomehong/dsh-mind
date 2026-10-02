@@ -20,6 +20,16 @@ export interface MindConfig {
         enabled: boolean;
         yieldRecheckMs: number;
         observeAfterMs: number;
+        worldMaxPerHour: number;
+    };
+    /** P3 硬隔离（spike 后启用）：唤醒会话钉扎专用工作区；undefined=宿主默认工作区 */
+    workspace: {
+        workspaceId?: string;
+    };
+    /** C3 软顶降速（路线 a，契约已核实 session/selectModel）：过软顶切 eco 模型；缺省=关闭 */
+    spendEcoModel?: {
+        provider?: string;
+        model: string;
     };
     /** C1 软顶节流（P0）：过软顶后自驱地板的倍率（minSpontaneousIntervalMs × N） */
     spendSoftIntervalFactor: number;
