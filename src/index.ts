@@ -725,6 +725,12 @@ export function apply(ctx: Context): void {
     setStopped(stopped: boolean): void {
       deps.setStoppedByMaster(stopped)
     },
+    /** P1.5 跨插件治理面（dsh-task-board 防自批 v2 消费，governance-audit F6）：
+     *  心智自有会话 id 清单（唤醒底座会话 + 卷积摘要会话）。空数组 = 尚未创建。 */
+    sessionIds(): string[] {
+      const s = loadState()
+      return [s.mindSessionId, s.summarizerSessionId].filter((v): v is string => typeof v === 'string' && v !== '')
+    },
   }
   ;(ctx as unknown as { provide: (name: string, value: unknown) => void }).provide('dsh-mind', service)
   ctx.logger?.info?.('[dsh-mind] 服务已提供（dsh-mind：injectObservation/wakeNow/setStopped）')
