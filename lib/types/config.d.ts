@@ -15,6 +15,12 @@ export interface MindConfig {
     /** 两级 spend cap（USD/日） */
     spendSoftCapUsd: number;
     spendHardCapUsd: number;
+    /** P1 会话在场让位（arch-lead §3.7）：enabled=false 一键回滚到并行行为 */
+    presence: {
+        enabled: boolean;
+        yieldRecheckMs: number;
+        observeAfterMs: number;
+    };
     /** C1 软顶节流（P0）：过软顶后自驱地板的倍率（minSpontaneousIntervalMs × N） */
     spendSoftIntervalFactor: number;
     /** 成本核算单价（USD / 每百万 token） */

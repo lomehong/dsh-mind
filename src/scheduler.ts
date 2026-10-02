@@ -4,6 +4,7 @@
  */
 import type { MindConfig } from './config.ts'
 import type { AskEntry } from './asks.ts'
+import type { PresenceStrength } from './presence.ts'
 
 /** 调度状态（持久化于 run/state.json；重启恢复）。 */
 export interface SchedulerState {
@@ -48,6 +49,12 @@ export interface SchedulerState {
   /** 被拒审批的时间戳列表（24h 滚动衰减；pendingApprovals = 窗口内条数。
    *  修复 concurrence-sre F9：旧实现只增不清，一次拒绝后空醒短路永久失效） */
   approvalRejections?: number[]
+  /** P1 会话在场让位：下次观察拍时刻（在场持续 observeAfterMs 后允许一拍只读观察） */
+  observeDueAt?: number
+  /** P1 让位/重查的心跳（watchdog 活性基准 = max(lastWakeAt, lastHeartbeatAt)） */
+  lastHeartbeatAt?: number
+  /** P1 让位期积压的世界变化（cap 20；让位结束后的第一拍合并注入，绝不自触唤醒） */
+  backlog?: Array<{ desc: string; ts: string }>
 }
 
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
@@ -191,8 +198,11 @@ export function collectDueMindTriggers(
   // P0 止血：排在静音/硬顶之后——静音期自发路径不跑，lastWakeAt 停滞曾让
   // watchdog 每 ~20 分钟合成一次真实 LLM 唤醒绕过静音与硬顶（夜间成本洞）。
   // 挂起的看护延迟到静音/硬顶结束后的第一个 tick 自然补查（条件持续存在）。
-  if (state.lastWakeAt > 0 && now - state.lastWakeAt > cfg.wakeTimeoutMs * 2) {
-    return { fire: true, trigger: 'watchdog', reason: 'watchdog silence' }
+  if (state.lastWakeAt > 0 || (state.lastHeartbeatAt ?? 0) > 0) {
+    const lastActivity = Math.max(state.lastWakeAt, state.lastHeartbeatAt ?? 0)
+    if (now - lastActivity > cfg.wakeTimeoutMs * 2) {
+      return { fire: true, trigger: 'watchdog', reason: 'watchdog silence' }
+    }
   }
   if (state.wakeAt > 0 && now >= state.wakeAt) {
     return { fire: true, trigger: 'spontaneous', reason: spend === 'soft' ? 'due (soft: fast model)' : 'due' }
@@ -219,6 +229,32 @@ export function scheduleNextSpontaneous(
  *  修复 concurrence-sre F9：旧实现 pendingApprovals 只增不清，一次拒绝后空醒短路永久失效。 */
 export function decayRejections(rejections: number[], now: number, windowMs = 24 * 3_600_000): number[] {
   return rejections.filter(t => now - t < windowMs && t <= now)
+}
+
+export interface PresenceGateInputs {
+  trigger: TriggerDecision['trigger']
+  strongest: PresenceStrength
+  observeDueAt: number | undefined
+  now: number
+}
+
+export type PresenceGateAction =
+  | { action: 'pass' }
+  | { action: 'defer'; retryMs: number }
+  | { action: 'observe' }
+
+/** P1 会话在场让位闸（纯函数，G8）：
+ *  - reactive/event 永不让位（G3：回应人不限速）；
+ *  - watchdog 是存活探针不过闸（master-facing 在场时降为 defer 维持活性）；
+ *  - spontaneous：master-facing → defer/observe 拍；background → 照常（并发卡约束）。 */
+export function presenceGate(inputs: PresenceGateInputs): PresenceGateAction {
+	const { trigger, strongest, observeDueAt, now } = inputs
+	if (trigger === 'reactive' || trigger === 'event') return { action: 'pass' }
+	if (strongest === 'master-facing') {
+		if (observeDueAt !== undefined && now >= observeDueAt) return { action: 'observe' }
+		return { action: 'defer', retryMs: 120000 }
+	}
+	return { action: 'pass' }
 }
 
 /** 唤醒 run 成本核算（token × 单价；纯函数）。 */

@@ -4,6 +4,7 @@
  */
 import type { MindConfig } from './config.ts';
 import type { AskEntry } from './asks.ts';
+import type { PresenceStrength } from './presence.ts';
 /** 调度状态（持久化于 run/state.json；重启恢复）。 */
 export interface SchedulerState {
     /** 退避档位（0=全速连转） */
@@ -60,6 +61,15 @@ export interface SchedulerState {
     /** 被拒审批的时间戳列表（24h 滚动衰减；pendingApprovals = 窗口内条数。
      *  修复 concurrence-sre F9：旧实现只增不清，一次拒绝后空醒短路永久失效） */
     approvalRejections?: number[];
+    /** P1 会话在场让位：下次观察拍时刻（在场持续 observeAfterMs 后允许一拍只读观察） */
+    observeDueAt?: number;
+    /** P1 让位/重查的心跳（watchdog 活性基准 = max(lastWakeAt, lastHeartbeatAt)） */
+    lastHeartbeatAt?: number;
+    /** P1 让位期积压的世界变化（cap 20；让位结束后的第一拍合并注入，绝不自触唤醒） */
+    backlog?: Array<{
+        desc: string;
+        ts: string;
+    }>;
 }
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
 export declare const IDLE_STEP_EVERY = 6;
@@ -122,5 +132,24 @@ export declare function scheduleNextSpontaneous(state: SchedulerState, cfg: Mind
 /** 被拒审批 24h 滚动衰减（纯函数，G8）：窗口外的时间戳剔除，未来时间戳视为脏数据丢弃。
  *  修复 concurrence-sre F9：旧实现 pendingApprovals 只增不清，一次拒绝后空醒短路永久失效。 */
 export declare function decayRejections(rejections: number[], now: number, windowMs?: number): number[];
+export interface PresenceGateInputs {
+    trigger: TriggerDecision['trigger'];
+    strongest: PresenceStrength;
+    observeDueAt: number | undefined;
+    now: number;
+}
+export type PresenceGateAction = {
+    action: 'pass';
+} | {
+    action: 'defer';
+    retryMs: number;
+} | {
+    action: 'observe';
+};
+/** P1 会话在场让位闸（纯函数，G8）：
+ *  - reactive/event 永不让位（G3：回应人不限速）；
+ *  - watchdog 是存活探针不过闸（master-facing 在场时降为 defer 维持活性）；
+ *  - spontaneous：master-facing → defer/observe 拍；background → 照常（并发卡约束）。 */
+export declare function presenceGate(inputs: PresenceGateInputs): PresenceGateAction;
 /** 唤醒 run 成本核算（token × 单价；纯函数）。 */
 export declare function costUsd(cfg: MindConfig, tokensIn: number, tokensOut: number): number;
