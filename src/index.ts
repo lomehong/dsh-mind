@@ -100,13 +100,18 @@ export function apply(ctx: Context): void {
     touchConsoleActivity: (): void => {
       lastConsoleActivityAt = Date.now()
     },
-    presenceState: () => ({
-      strongest: presenceSnapshot?.strongest ?? 'none'
-,      atComputer: (lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000) || (presenceSnapshot?.strongest ?? 'none') === 'master-facing'
-,      atComputerSource: (lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000) ? 'console' : 'session'
-,      sampledAt: presenceSnapshot !== undefined ? new Date(presenceSnapshot.at).toISOString() : undefined
-,      lastConsoleActivityAt: lastConsoleActivityAt > 0 ? lastConsoleActivityAt : undefined
-    }),
+    presenceState: () => {
+      const consoleActive = lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000
+      const strongest = presenceSnapshot?.strongest ?? 'none'
+      const sampledAt = presenceSnapshot !== undefined ? new Date(presenceSnapshot.at).toISOString() : undefined
+      return {
+        strongest,
+        atComputer: consoleActive || strongest === 'master-facing',
+        atComputerSource: consoleActive ? 'console' : 'session',
+        ...(sampledAt !== undefined ? { sampledAt } : {}),
+        ...(lastConsoleActivityAt > 0 ? { lastConsoleActivityAt } : {}),
+      }
+    },
     pendingApprovals: (): number => loadState().pendingApprovals ?? 0,
     say: (text: string): void => injectObservation('主人', text, { source: 'web' }),
     /** P5 请求账答复：结清该单 + 答复按 say 同路径注入（§6.5「主人消息消化」结清路径
