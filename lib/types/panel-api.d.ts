@@ -21,6 +21,15 @@ export interface PanelDeps {
     }>;
     /** P1.5 控制台活动触点（在场融合输入源；POST /console-activity 时调用）。 */
     touchConsoleActivity?(): void;
+    /** P1.5 在场遥测（status 端点透出，外部可实测信号翻转）。 */
+    presenceState?(): {
+        strongest: string;
+        atComputer: boolean;
+        atComputerSource: string;
+        sampledAt?: string;
+    } & {
+        lastConsoleActivityAt?: number;
+    };
 }
 export declare function registerPanelApi(web: {
     register(route: {

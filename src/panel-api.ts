@@ -46,6 +46,8 @@ export interface PanelDeps {
   activeGoals(): Array<{ title: string; ts: string }>
   /** P1.5 控制台活动触点（在场融合输入源；POST /console-activity 时调用）。 */
   touchConsoleActivity?(): void
+  /** P1.5 在场遥测（status 端点透出，外部可实测信号翻转）。 */
+  presenceState?(): { strongest: string; atComputer: boolean; atComputerSource: string; sampledAt?: string } & { lastConsoleActivityAt?: number }
 }
 
 /** 写门禁键：每次进程启动随机生成，不落盘（重启即换；先例 dsh-memory）。 */
@@ -140,6 +142,7 @@ export function registerPanelApi(
           hardCapUsd: cfg.spendHardCapUsd,
         },
         spendLevel: evaluateSpend(st, cfg, new Date()),
+        presence: deps.presenceState?.(),
         pending: deps.reactiveQueued(), // 正在排队等 TA 处理的观察数
         pendingApprovals: deps.pendingApprovals(),
         openPendings: Array.isArray(st.openPendings) ? st.openPendings.length : 0, // P2.1 承诺账（未结清的主人消息）
