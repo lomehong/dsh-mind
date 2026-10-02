@@ -43,6 +43,11 @@ export interface SchedulerState {
   idleStreak: number
   /** 世界观察指纹（看板/记忆在两次唤醒间的状态快照；undefined=未吸收过） */
   worldFingerprint?: string
+  /** 最近一次成功采样的看板列分布（世界观察「缺席≠空」：fetch 失败时沿用，P0 止血） */
+  worldTaskCols?: Record<string, number>
+  /** 被拒审批的时间戳列表（24h 滚动衰减；pendingApprovals = 窗口内条数。
+   *  修复 concurrence-sre F9：旧实现只增不清，一次拒绝后空醒短路永久失效） */
+  approvalRejections?: number[]
 }
 
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
@@ -175,16 +180,19 @@ export function collectDueMindTriggers(
   }
   if (inputs.eventQueued) return { fire: true, trigger: 'event', reason: 'event queued' }
   if (inputs.reactiveQueued) return { fire: true, trigger: 'reactive', reason: 'message queued' }
-  const spend = evaluateSpend(state, cfg, new Date(now))
-  // watchdog：lastWakeAt 起静默超 2×硬超时 → 合成唤醒（不复活暂停态——paused 已在上面返回）
-  if (state.lastWakeAt > 0 && now - state.lastWakeAt > cfg.wakeTimeoutMs * 2) {
-    return { fire: true, trigger: 'watchdog', reason: 'watchdog silence' }
-  }
   if (isQuietHour(new Date(now), cfg)) {
     return { fire: false, trigger: 'none', reason: 'quiet hours' }
   }
+  const spend = evaluateSpend(state, cfg, new Date(now))
   if (spend === 'hard') {
     return { fire: false, trigger: 'none', reason: 'spend hard cap' }
+  }
+  // watchdog：lastWakeAt 起静默超 2×硬超时 → 合成唤醒（存活探针）。
+  // P0 止血：排在静音/硬顶之后——静音期自发路径不跑，lastWakeAt 停滞曾让
+  // watchdog 每 ~20 分钟合成一次真实 LLM 唤醒绕过静音与硬顶（夜间成本洞）。
+  // 挂起的看护延迟到静音/硬顶结束后的第一个 tick 自然补查（条件持续存在）。
+  if (state.lastWakeAt > 0 && now - state.lastWakeAt > cfg.wakeTimeoutMs * 2) {
+    return { fire: true, trigger: 'watchdog', reason: 'watchdog silence' }
   }
   if (state.wakeAt > 0 && now >= state.wakeAt) {
     return { fire: true, trigger: 'spontaneous', reason: spend === 'soft' ? 'due (soft: fast model)' : 'due' }
@@ -193,9 +201,24 @@ export function collectDueMindTriggers(
 }
 
 /** 唤醒完成后的下次自发唤醒时刻（rm-then-dispatch：由入口原子写回 state.wakeAt）。 */
-export function scheduleNextSpontaneous(state: SchedulerState, cfg: MindConfig, now: number, outcome: WakeOutcome): number {
+export function scheduleNextSpontaneous(
+  state: SchedulerState,
+  cfg: MindConfig,
+  now: number,
+  outcome: WakeOutcome,
+  spendLevel: SpendLevel = evaluateSpend(state, cfg, new Date(now)),
+): number {
   const next = advanceAfterWake(state, outcome, cfg)
-  return now + nextDelayMs(cfg, next.backoffLevel)
+  // C1 软顶节流（P0）：过软顶后自驱地板 ×N（默认 ×3，5 分钟→15 分钟）；阶梯照旧。
+  // 机械空醒不节流（零 LLM 成本），软顶主力降频的是真醒。
+  const floor = cfg.minSpontaneousIntervalMs * (spendLevel === 'soft' ? Math.max(1, cfg.spendSoftIntervalFactor) : 1)
+  return now + Math.max(floor, nextDelayMs(cfg, next.backoffLevel))
+}
+
+/** 被拒审批 24h 滚动衰减（纯函数，G8）：窗口外的时间戳剔除，未来时间戳视为脏数据丢弃。
+ *  修复 concurrence-sre F9：旧实现 pendingApprovals 只增不清，一次拒绝后空醒短路永久失效。 */
+export function decayRejections(rejections: number[], now: number, windowMs = 24 * 3_600_000): number[] {
+  return rejections.filter(t => now - t < windowMs && t <= now)
 }
 
 /** 唤醒 run 成本核算（token × 单价；纯函数）。 */

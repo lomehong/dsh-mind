@@ -19,6 +19,8 @@ export interface MindConfig {
   /** 两级 spend cap（USD/日） */
   spendSoftCapUsd: number
   spendHardCapUsd: number
+  /** C1 软顶节流（P0）：过软顶后自驱地板的倍率（minSpontaneousIntervalMs × N） */
+  spendSoftIntervalFactor: number
   /** 成本核算单价（USD / 每百万 token） */
   priceUsdPerMTokIn: number
   priceUsdPerMTokOut: number
@@ -53,6 +55,7 @@ export const CONFIG_DEFAULTS: MindConfig = {
   quietHours: { tz: 'Asia/Shanghai', start: '01:00', end: '08:00', enabled: true },
   spendSoftCapUsd: 1,
   spendHardCapUsd: 5,
+  spendSoftIntervalFactor: 3,
   priceUsdPerMTokIn: 0.27,
   priceUsdPerMTokOut: 1.1,
   reactiveMergeWindowMs: 60000,
@@ -95,6 +98,7 @@ export function mergeMindConfig(raw: unknown): MindConfig {
   }
   m.spendSoftCapUsd = toNum(r.spendSoftCapUsd, m.spendSoftCapUsd, 0.01, 1000)
   m.spendHardCapUsd = toNum(r.spendHardCapUsd, m.spendHardCapUsd, 0.01, 1000)
+  m.spendSoftIntervalFactor = toNum(r.spendSoftIntervalFactor, m.spendSoftIntervalFactor, 1, 10)
   if (m.spendHardCapUsd < m.spendSoftCapUsd) m.spendHardCapUsd = m.spendSoftCapUsd
   m.priceUsdPerMTokIn = toNum(r.priceUsdPerMTokIn, m.priceUsdPerMTokIn, 0, 1000)
   m.priceUsdPerMTokOut = toNum(r.priceUsdPerMTokOut, m.priceUsdPerMTokOut, 0, 1000)

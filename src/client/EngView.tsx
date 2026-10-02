@@ -288,7 +288,7 @@ export function EngView({ status, refresh }: { status: StatusPayload | undefined
         <Stat label="退避档位" value={`L${status.backoffLevel}`} sub={`自醒间隔 ≤ ${Math.round(Math.min(300000, 5000 * Math.pow(2, Math.max(0, status.backoffLevel - 1))) / 1000)}s`} />
         <Stat label="上次唤醒" value={fmtTime(status.lastWakeAt)} />
         <Stat label="下次自醒" value={stopped ? '已停' : asleep ? '静音中' : nextWakeMin > 0 ? `~${nextWakeMin} 分钟` : '随时'} />
-        <Stat label="今日花费" value={fmtUsd(spend.usedUsd)} sub={`/ 硬顶 ${fmtUsd(spend.hardCapUsd)}${capped ? ' · 触顶停自发' : soft ? ' · 过软顶降快模型' : ''}`} accent={spendAccent} />
+        <Stat label="今日花费" value={fmtUsd(spend.usedUsd)} sub={`/ 硬顶 ${fmtUsd(spend.hardCapUsd)}${capped ? ' · 触顶停自发' : soft ? ' · 过软顶：自驱降频' : ''}`} accent={spendAccent} />
       </div>
 
       {/* 预算条 + 操作 */}

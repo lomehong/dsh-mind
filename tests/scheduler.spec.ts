@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { CONFIG_DEFAULTS, type MindConfig } from '../src/config.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, evaluateSpend,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, evaluateSpend,
   isQuietHour, nextDelayMs, scheduleNextSpontaneous, shouldShortCircuitSpontaneous,
   type SchedulerState,
 } from '../src/scheduler.ts'
@@ -160,5 +160,56 @@ describe('触发收集', () => {
 describe('dayKey', () => {
   it('ISO 日期键', () => {
     expect(dayKey(new Date(NOON))).toBe('2026-09-18')
+  })
+})
+
+describe('P0 止血：watchdog 后置（静音/硬顶优先）', () => {
+  it('静音期内不合成 watchdog 唤醒（夜间成本洞修复）', () => {
+    const quietNight = Date.UTC(2026, 8, 18, 18, 0, 0) // 2026-09-19 02:00 Asia/Shanghai（静音中）
+    const stalled = quietNight - cfg.wakeTimeoutMs * 3 // 静默已超 2×硬超时
+    const s = state({ lastWakeAt: stalled, wakeAt: quietNight + 60000 })
+    const d = collectDueMindTriggers(quietNight, s, cfg, { reactiveQueued: false, eventQueued: false })
+    expect(d.fire).toBe(false)
+    expect(d.reason).toBe('quiet hours')
+  })
+  it('非静音、未触硬顶时 watchdog 照常触发（存活探针保留）', () => {
+    const s = state({ lastWakeAt: NOON - cfg.wakeTimeoutMs * 3 })
+    const d = collectDueMindTriggers(NOON, s, cfg, { reactiveQueued: false, eventQueued: false })
+    expect(d.fire).toBe(true)
+    expect(d.trigger).toBe('watchdog')
+  })
+  it('watchdog 让位 spend 硬顶：硬顶期不合成唤醒', () => {
+    const s = state({
+      lastWakeAt: NOON - cfg.wakeTimeoutMs * 3,
+      spend: { date: dayKey(new Date(NOON)), usedUsd: 5, tokensIn: 0, tokensOut: 0, llmCalls: 0 },
+    })
+    const d = collectDueMindTriggers(NOON, s, cfg, { reactiveQueued: false, eventQueued: false })
+    expect(d.fire).toBe(false)
+    expect(d.reason).toBe('spend hard cap')
+  })
+})
+
+describe('P0 止血：C1 软顶节流', () => {
+  it('过软顶后自驱间隔 ≥ 地板×3（默认 15 分钟）', () => {
+    const soft = state({ spend: { date: dayKey(new Date(NOON)), usedUsd: 1.5, tokensIn: 0, tokensOut: 0, llmCalls: 0 } })
+    const next = scheduleNextSpontaneous(soft, cfg, NOON, 'empty')
+    expect(next - NOON).toBeGreaterThanOrEqual(900000)
+  })
+  it('未过软顶保持地板 5 分钟（对照）', () => {
+    const next = scheduleNextSpontaneous(state(), cfg, NOON, 'empty')
+    expect(next - NOON).toBe(300000)
+  })
+})
+
+describe('P0 止血：被拒审批 24h 滚动衰减（decayRejections）', () => {
+  it('窗口外剔除、窗口内保留、未来时间戳丢弃（脏数据防御）', () => {
+    const now = Date.UTC(2026, 8, 18, 4, 0, 0)
+    const h = 3600000
+    const out = decayRejections([now - 25 * h, now - 23 * h, now - h, now + h], now)
+    expect(out).toEqual([now - 23 * h, now - h])
+  })
+  it('空列表幂等', () => {
+    const now = Date.UTC(2026, 8, 18, 4, 0, 0)
+    expect(decayRejections([], now)).toEqual([])
   })
 })

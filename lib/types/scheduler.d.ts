@@ -55,6 +55,11 @@ export interface SchedulerState {
     idleStreak: number;
     /** 世界观察指纹（看板/记忆在两次唤醒间的状态快照；undefined=未吸收过） */
     worldFingerprint?: string;
+    /** 最近一次成功采样的看板列分布（世界观察「缺席≠空」：fetch 失败时沿用，P0 止血） */
+    worldTaskCols?: Record<string, number>;
+    /** 被拒审批的时间戳列表（24h 滚动衰减；pendingApprovals = 窗口内条数。
+     *  修复 concurrence-sre F9：旧实现只增不清，一次拒绝后空醒短路永久失效） */
+    approvalRejections?: number[];
 }
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
 export declare const IDLE_STEP_EVERY = 6;
@@ -113,6 +118,9 @@ export interface TriggerDecision {
  */
 export declare function collectDueMindTriggers(now: number, state: SchedulerState, cfg: MindConfig, inputs: TriggerInputs): TriggerDecision;
 /** 唤醒完成后的下次自发唤醒时刻（rm-then-dispatch：由入口原子写回 state.wakeAt）。 */
-export declare function scheduleNextSpontaneous(state: SchedulerState, cfg: MindConfig, now: number, outcome: WakeOutcome): number;
+export declare function scheduleNextSpontaneous(state: SchedulerState, cfg: MindConfig, now: number, outcome: WakeOutcome, spendLevel?: SpendLevel): number;
+/** 被拒审批 24h 滚动衰减（纯函数，G8）：窗口外的时间戳剔除，未来时间戳视为脏数据丢弃。
+ *  修复 concurrence-sre F9：旧实现 pendingApprovals 只增不清，一次拒绝后空醒短路永久失效。 */
+export declare function decayRejections(rejections: number[], now: number, windowMs?: number): number[];
 /** 唤醒 run 成本核算（token × 单价；纯函数）。 */
 export declare function costUsd(cfg: MindConfig, tokensIn: number, tokensOut: number): number;

@@ -22,7 +22,7 @@ import { tryRollup } from './summarizer.ts'
 import { diffWorld } from './worldwatch.ts'
 import { loadMissions } from './missions.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, DEEP_THINK_EVERY, IDLE_STEP_EVERY, nextDelayMs, scheduleNextSpontaneous,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, DEEP_THINK_EVERY, IDLE_STEP_EVERY, nextDelayMs, scheduleNextSpontaneous,
   shouldShortCircuitSpontaneous,
   type SchedulerState, type TriggerDecision, type WakeOutcome,
 } from './scheduler.ts'
@@ -260,6 +260,12 @@ export function apply(ctx: Context): void {
     state.spend.tokensIn += result.tokensIn
     state.spend.tokensOut += result.tokensOut
     state.spend.llmCalls += 1
+    // P0：被拒审批 24h 衰减（decayRejections）——旧语义只增不清，
+    // 一次拒绝后空醒短路永久失效（concurrence-sre F9）
+    if ((state.approvalRejections ?? []).length > 0) {
+      state.approvalRejections = decayRejections(state.approvalRejections ?? [], now.getTime())
+      state.pendingApprovals = state.approvalRejections.length
+    }
     state.lastSeq += 1
     const wakeStep: TimelineStep = {
       v: 2, seq: state.lastSeq, ts: new Date().toISOString(), type: 'wake', source: 'mind',
@@ -316,7 +322,9 @@ export function apply(ctx: Context): void {
     }
     state.idleStreak = 0 // 真实唤醒打断机械空醒连拍
     state.lastWakeAt = Date.now() // 锚定到唤醒【结束】：世界观察的回显抑制窗从结束点起算
-    state.wakeAt = scheduleNextSpontaneous(state, cfg, Date.now(), outcome)
+    // P0：kill switch 在飞语义——显式停止后结算不再覆写排程（停机即清排程，
+    // 恢复时由 tick 重排，错过不补；对齐 setStoppedByMaster 的既有语义）
+    state.wakeAt = state.stoppedByMaster ? 0 : scheduleNextSpontaneous(state, cfg, Date.now(), outcome)
     state = advanceAfterWake(state, outcome, cfg)
     state.running = false
     saveState(state)
@@ -401,7 +409,13 @@ export function apply(ctx: Context): void {
           try {
             const s = loadState()
             s.lastSeq += 1
-            s.pendingApprovals += 1
+            // P0：被拒审批 24h 滚动衰减（concurrence-sre F9）——旧实现只增不清，
+            // 一次拒绝后空醒短路永久失效；窗口内的拒绝仍会阻止短路（真醒消化）
+            const nowMs = Date.now()
+            const rejections = decayRejections(s.approvalRejections ?? [], nowMs)
+            rejections.push(nowMs)
+            s.approvalRejections = rejections
+            s.pendingApprovals = rejections.length
             appendStep({
               v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'observation', source: 'mind',
               content: `自治面审批被拒：${tool}（${reason}）。此类动作需主人批准后经 task_delegate 治理路径执行。`,
@@ -422,21 +436,28 @@ export function apply(ctx: Context): void {
   async function checkWorld(): Promise<void> {
     const cfgNow = loadMindConfig()
     if (!cfgNow.worldWatchEnabled) return
-    const taskCols: Record<string, number> = {}
+    // P0 止血（缺席≠空）：fetch 失败时沿用上次成功采样参与指纹——旧实现把
+    // 「看板缺席」当「看板为空」吸收进指纹（实测指纹 {"c":"","m":214}），
+    // 看板恢复时还会误报一次全量变化
+    const lastCols = loadState().worldTaskCols
+    let taskCols: Record<string, number> | undefined
     try {
       const resp = await fetch(`${cfgNow.worldWatchUrl}/dsh-task-board/state`, { signal: AbortSignal.timeout(5000) })
       const body = (await resp.json()) as { ok?: boolean; state?: { tasks?: Array<{ column?: string }> } }
+      const cols: Record<string, number> = {}
       for (const t of body.state?.tasks ?? []) {
         const c = t.column ?? '?'
-        taskCols[c] = (taskCols[c] ?? 0) + 1
+        cols[c] = (cols[c] ?? 0) + 1
       }
-    } catch { /* 看板缺席/超时：本轮只看记忆 */ }
+      taskCols = cols
+    } catch { /* 看板缺席/超时：沿用上次分布参与指纹 */ }
     const entries = readMemoryEntries()
-    const counts = { taskCols, memoryCount: entries.length }
+    const counts = { taskCols: taskCols ?? lastCols ?? {}, memoryCount: entries.length }
     const s = loadState()
     const diff = diffWorld(s.worldFingerprint, counts)
     if (diff.fp === s.worldFingerprint) return
     s.worldFingerprint = diff.fp
+    if (taskCols !== undefined) s.worldTaskCols = taskCols
     // 自回显压制：唤醒【结束】90 秒内的世界变化多半是 TA 自己动作的回显
     // （absorbWorld 异步收尾与 20s 巡查 tick 有竞态窗口）——静默吸收不注入
     const recentWake = s.lastWakeAt > 0 && Date.now() - s.lastWakeAt < 90000
@@ -572,6 +593,9 @@ export function apply(ctx: Context): void {
             s.wakeAt = scheduleNextSpontaneous(s, cfgNow, Date.now(), 'empty')
             s.running = false
             saveState(s)
+            // P0：失败/超时路径同样吸收自己造成的世界变化（超时前已落板的
+            // task_delegate、已写的记忆——否则余波会在下拍触发空对账唤醒）
+            absorbWorld()
           } catch { /* 双重失败：等 watchdog */ }
           logger.error?.('[dsh-mind] 唤醒失败:', error instanceof Error ? error.stack ?? error.message : String(error))
         })

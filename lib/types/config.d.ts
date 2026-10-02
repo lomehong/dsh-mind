@@ -15,6 +15,8 @@ export interface MindConfig {
     /** 两级 spend cap（USD/日） */
     spendSoftCapUsd: number;
     spendHardCapUsd: number;
+    /** C1 软顶节流（P0）：过软顶后自驱地板的倍率（minSpontaneousIntervalMs × N） */
+    spendSoftIntervalFactor: number;
     /** 成本核算单价（USD / 每百万 token） */
     priceUsdPerMTokIn: number;
     priceUsdPerMTokOut: number;
