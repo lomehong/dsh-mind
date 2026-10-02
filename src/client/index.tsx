@@ -18,7 +18,7 @@ import { fetchStatus, usePoll, type StatusPayload } from './api.ts'
 import { Being } from './Being.tsx'
 import { CompanionLayer } from './Companion.tsx'
 import { MindPage } from './MindPage.tsx'
-import { Probe } from './probe.tsx'
+import { ActivitySensor } from './activity-sensor.tsx'
 
 export const inject = ['slots']
 
@@ -141,12 +141,7 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.inject('conversation.view', () =>
       ctx.slots.register(
         { name: 'conversation.view', id: 'mind', order: 21, label: () => '心智' },
-        () => (
-          <>
-            <MindPage />
-            <Probe mountId="conv-view-mind" />
-          </>
-        ),
+        MindPage,
       ),
     )
   } catch (e) { console.warn('[dsh-mind] conversation.view 注册失败（显式降级）:', e instanceof Error ? e.message : String(e)) }
@@ -160,7 +155,7 @@ export function apply(ctx: ClientContext): void {
         () => (
           <>
             <CompanionLayer />
-            <Probe mountId="shell-overlay-companion" />
+            <ActivitySensor />
           </>
         ),
       ),

@@ -19,6 +19,8 @@ export interface PanelDeps {
         title: string;
         ts: string;
     }>;
+    /** P1.5 控制台活动触点（在场融合输入源；POST /console-activity 时调用）。 */
+    touchConsoleActivity?(): void;
 }
 export declare function registerPanelApi(web: {
     register(route: {

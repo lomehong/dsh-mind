@@ -55,6 +55,8 @@ export function apply(ctx: Context): void {
   const reactiveQueue: Array<{ from: string; text: string }> = []
   /** P1 会话在场快照（20s 槽刷新；感知失败沿用上次快照——fail-open，G7） */
   let presenceSnapshot: PresenceSnapshot | undefined
+  /** P1.5 控制台最近活动时刻（shell.overlay 客户端节流心跳写入；0=重启后尚无活动）。 */
+  let lastConsoleActivityAt = 0
 
   /** 读记忆条目（dsh-memory 服务面；缺席→空）。 */
   function readMemoryEntries(): Array<{ content: string; ts?: string; seq?: number }> {
@@ -94,6 +96,10 @@ export function apply(ctx: Context): void {
     },
     isRunning: (): boolean => running,
     reactiveQueued: (): number => reactiveQueue.length,
+    /** P1.5 控制台活动触点（shell.overlay 客户端心跳；在场融合输入源）。 */
+    touchConsoleActivity: (): void => {
+      lastConsoleActivityAt = Date.now()
+    },
     pendingApprovals: (): number => loadState().pendingApprovals ?? 0,
     say: (text: string): void => injectObservation('主人', text, { source: 'web' }),
     /** P5 请求账答复：结清该单 + 答复按 say 同路径注入（§6.5「主人消息消化」结清路径
@@ -816,10 +822,18 @@ export function apply(ctx: Context): void {
     /** P1.5 在场感知查询（task-board 审批升级门控消费）：最近一次在场采样——
      *  strongest=master-facing 表示主人正在电脑旁（有会话在被服务），审批走
      *  控制台即可，不必打扰 IM。采样缺失（心智未起）→ none=无法确认在场。 */
-    presenceState(): { strongest: 'master-facing' | 'background' | 'none'; sampledAt?: string } {
+    presenceState(): { strongest: 'master-facing' | 'background' | 'none'; atComputer: boolean; atComputerSource: 'console' | 'session'; sampledAt?: string } {
       const s = presenceSnapshot
-      if (s === undefined) return { strongest: 'none' }
-      return { strongest: s.strongest, sampledAt: new Date(s.at).toISOString() }
+      const strongest = s?.strongest ?? 'none'
+      // P1.5 在场融合：控制台活跃（2 分钟内）或 engaged → 在电脑旁（可即刻处理）
+      const consoleActive = lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000
+      const atComputer = consoleActive || strongest === 'master-facing'
+      return {
+        strongest,
+        atComputer,
+        atComputerSource: consoleActive ? 'console' : 'session',
+        ...(s !== undefined ? { sampledAt: new Date(s.at).toISOString() } : {}),
+      }
     },
   }
   ;(ctx as unknown as { provide: (name: string, value: unknown) => void }).provide('dsh-mind', service)

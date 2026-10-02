@@ -44,6 +44,8 @@ export interface PanelDeps {
   answerAsk(id: string, answer: string): boolean
   /** P4 goals 精化：当前活跃目标（读侧提取自 dsh-memory [目标] 标记条目）。 */
   activeGoals(): Array<{ title: string; ts: string }>
+  /** P1.5 控制台活动触点（在场融合输入源；POST /console-activity 时调用）。 */
+  touchConsoleActivity?(): void
 }
 
 /** 写门禁键：每次进程启动随机生成，不落盘（重启即换；先例 dsh-memory）。 */
@@ -97,11 +99,6 @@ function writeGate(req: IncomingMessage, res: ServerResponse): boolean {
   return true
 }
 
-/** P1.5 探针日志路径（run/probe-heartbeats.jsonl，与 state 同目录）。 */
-function probeLogPath(): string {
-  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
-  return join(home, 'dsh-mind', 'run', 'probe-heartbeats.jsonl')
-}
 
 export function registerPanelApi(
   web: { register(route: { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void }): void },
@@ -184,41 +181,17 @@ export function registerPanelApi(
     },
   })
 
-  // P1.5 在场探针（临时诊断件）：POST 落盘心跳（写门禁），GET 回读尾部。
-  // 数据只含页面级事件计数与可见性布尔——无任何输入内容。
+  // P1.5 控制台活动信号（在场融合输入源）：POST 仅记录「控制台最近被使用」
+  // 的时间戳（写门禁）——不含任何输入内容。由 shell.overlay 常驻客户端节流上报。
   web.register({
     kind: 'exact',
-    path: '/dsh-mind/probe',
+    path: '/dsh-mind/console-activity',
     handler: (req, res) => {
       if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
-      if (req.method === 'GET') {
-        const file = probeLogPath()
-        let lines: string[] = []
-        try {
-          if (existsSync(file)) lines = readFileSync(file, 'utf8').split('\n').filter(l => l.trim() !== '').slice(-120)
-        } catch { /* 缺文件即空 */ }
-        return json(res, 200, { ok: true, lines })
-      }
       if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' })
       if (!writeGate(req, res)) return
-      void (async () => {
-        try {
-          const body = JSON.parse(await readBody(req)) as Record<string, unknown>
-          const file = probeLogPath()
-          mkdirSync(dirname(file), { recursive: true })
-          let oversized = false
-          try { if (existsSync(file) && statSync(file).size > 512 * 1024) oversized = true } catch { /* 首次无文件 */ }
-          if (oversized) {
-            // 滚动截断：诊断日志防无限膨胀
-            const lines = readFileSync(file, 'utf8').split('\n').filter(l => l.trim() !== '').slice(-400)
-            writeFileSync(file, `${lines.join('\n')}\n`, 'utf8')
-          }
-          appendFileSync(file, `${JSON.stringify({ receivedAt: new Date().toISOString(), ...body })}\n`, 'utf8')
-          json(res, 200, { ok: true })
-        } catch (e) {
-          json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) })
-        }
-      })()
+      deps.touchConsoleActivity?.()
+      json(res, 200, { ok: true })
     },
   })
 
