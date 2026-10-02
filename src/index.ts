@@ -106,8 +106,8 @@ export function apply(ctx: Context): void {
       const sampledAt = presenceSnapshot !== undefined ? new Date(presenceSnapshot.at).toISOString() : undefined
       return {
         strongest,
-        atComputer: consoleActive || strongest === 'master-facing',
-        atComputerSource: consoleActive ? 'console' : 'session',
+        atComputer: consoleActive,
+        atComputerSource: 'console',
         ...(sampledAt !== undefined ? { sampledAt } : {}),
         ...(lastConsoleActivityAt > 0 ? { lastConsoleActivityAt } : {}),
       }
@@ -839,11 +839,11 @@ export function apply(ctx: Context): void {
       const strongest = s?.strongest ?? 'none'
       // P1.5 在场融合：控制台活跃（2 分钟内）或 engaged → 在电脑旁（可即刻处理）
       const consoleActive = lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000
-      const atComputer = consoleActive || strongest === 'master-facing'
+      const atComputer = consoleActive
       return {
         strongest,
         atComputer,
-        atComputerSource: consoleActive ? 'console' : 'session',
+        atComputerSource: 'console',
         ...(s !== undefined ? { sampledAt: new Date(s.at).toISOString() } : {}),
       }
     },
