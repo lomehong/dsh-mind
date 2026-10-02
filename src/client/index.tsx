@@ -18,6 +18,7 @@ import { fetchStatus, usePoll, type StatusPayload } from './api.ts'
 import { Being } from './Being.tsx'
 import { CompanionLayer } from './Companion.tsx'
 import { MindPage } from './MindPage.tsx'
+import { Probe } from './probe.tsx'
 
 export const inject = ['slots']
 
@@ -135,21 +136,33 @@ export function apply(ctx: ClientContext): void {
   }))
 
   // conversation.view：当前宿主的一级入口（「心智」Tab，任务看板同款位置）
+  // P1.5 探针 B：心智 Tab 挂载生命周期对照组（预期：切走 Tab 即失联）。
   try {
     ctx.slots.inject('conversation.view', () =>
       ctx.slots.register(
         { name: 'conversation.view', id: 'mind', order: 21, label: () => '心智' },
-        MindPage,
+        () => (
+          <>
+            <MindPage />
+            <Probe mountId="conv-view-mind" />
+          </>
+        ),
       ),
     )
   } catch (e) { console.warn('[dsh-mind] conversation.view 注册失败（显式降级）:', e instanceof Error ? e.message : String(e)) }
 
   // shell.overlay：常驻存在体（窗口右下角——TA 住在整个 dsh 里，任何页面可见）
+  // P1.5 探针 A：常驻挂载生命周期对照组（预期：跨 Tab 持续收到全页输入事件）。
   try {
     ctx.slots.inject('shell.overlay', () =>
       ctx.slots.register(
         { name: 'shell.overlay', id: 'dsh-mind-companion', order: 90, label: () => '心智' },
-        CompanionLayer,
+        () => (
+          <>
+            <CompanionLayer />
+            <Probe mountId="shell-overlay-companion" />
+          </>
+        ),
       ),
     )
   } catch (e) { console.warn('[dsh-mind] shell.overlay 注册失败（显式降级）:', e instanceof Error ? e.message : String(e)) }

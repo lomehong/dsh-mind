@@ -17,6 +17,9 @@
  * - POST /dsh-mind/say     主人留言（text → message_in 落时间线 + 反应性唤醒）
  */
 import { randomBytes } from 'node:crypto'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { MindConfig } from './config.ts'
 import { evaluateSpend, isQuietHour } from './scheduler.ts'
@@ -94,6 +97,12 @@ function writeGate(req: IncomingMessage, res: ServerResponse): boolean {
   return true
 }
 
+/** P1.5 探针日志路径（run/probe-heartbeats.jsonl，与 state 同目录）。 */
+function probeLogPath(): string {
+  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  return join(home, 'dsh-mind', 'run', 'probe-heartbeats.jsonl')
+}
+
 export function registerPanelApi(
   web: { register(route: { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void }): void },
   deps: PanelDeps,
@@ -168,6 +177,44 @@ export function registerPanelApi(
           if (typeof body.stopped !== 'boolean') return json(res, 400, { ok: false, error: 'stopped 必须为 boolean' })
           deps.setStoppedByMaster(body.stopped)
           json(res, 200, { ok: true, stopped: body.stopped })
+        } catch (e) {
+          json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) })
+        }
+      })()
+    },
+  })
+
+  // P1.5 在场探针（临时诊断件）：POST 落盘心跳（写门禁），GET 回读尾部。
+  // 数据只含页面级事件计数与可见性布尔——无任何输入内容。
+  web.register({
+    kind: 'exact',
+    path: '/dsh-mind/probe',
+    handler: (req, res) => {
+      if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
+      if (req.method === 'GET') {
+        const file = probeLogPath()
+        let lines: string[] = []
+        try {
+          if (existsSync(file)) lines = readFileSync(file, 'utf8').split('\n').filter(l => l.trim() !== '').slice(-120)
+        } catch { /* 缺文件即空 */ }
+        return json(res, 200, { ok: true, lines })
+      }
+      if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' })
+      if (!writeGate(req, res)) return
+      void (async () => {
+        try {
+          const body = JSON.parse(await readBody(req)) as Record<string, unknown>
+          const file = probeLogPath()
+          mkdirSync(dirname(file), { recursive: true })
+          let oversized = false
+          try { if (existsSync(file) && statSync(file).size > 512 * 1024) oversized = true } catch { /* 首次无文件 */ }
+          if (oversized) {
+            // 滚动截断：诊断日志防无限膨胀
+            const lines = readFileSync(file, 'utf8').split('\n').filter(l => l.trim() !== '').slice(-400)
+            writeFileSync(file, `${lines.join('\n')}\n`, 'utf8')
+          }
+          appendFileSync(file, `${JSON.stringify({ receivedAt: new Date().toISOString(), ...body })}\n`, 'utf8')
+          json(res, 200, { ok: true })
         } catch (e) {
           json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) })
         }
