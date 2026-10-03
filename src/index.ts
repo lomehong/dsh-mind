@@ -101,6 +101,7 @@ export function apply(ctx: Context): void {
       lastConsoleActivityAt = Date.now()
     },
     presenceState: (opts?: { excludeSessionId?: string }) => {
+      const consoleActive = lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000
       const strongest = presenceSnapshot?.strongest ?? 'none'
       const sampledAt = presenceSnapshot !== undefined ? new Date(presenceSnapshot.at).toISOString() : undefined
       // P1.5 修正二（遥测实证）：engagedElsewhere = 排除提问会话自身后，仍有
@@ -111,11 +112,13 @@ export function apply(ctx: Context): void {
       )
       return {
         strongest,
-        // P1.5 最终语义（17:02 遥测实证）：atComputer = 纯会话信号——控制台
-        // 活跃信号存在未知自刷新源（主人离开后仍持续刷新，isTrusted 过滤
-        // 无效），在本机环境不可靠，降级为纯遥测不再参与判定。
-        atComputer: strongest === 'master-facing',
-        atComputerSource: 'session',
+        // P1.5 最终语义 v2（主人确认原始需求）：atComputer = 控制台键鼠活跃
+        // （2 分钟窗口）——在控制台前 = 不推企微；离开 = 推企微。isTrusted
+        // 过滤后复盘各轮「未推送」案例，根因均为调度缺失/门控反转，非信号
+        // 本体；会话信号会把分身自身 turn 误判为在场，不满足原始语义，
+        // 降级为辅助遥测。
+        atComputer: consoleActive,
+        atComputerSource: 'console',
         engagedElsewhere,
         ...(sampledAt !== undefined ? { sampledAt } : {}),
         ...(lastConsoleActivityAt > 0 ? { lastConsoleActivityAt } : {}),
