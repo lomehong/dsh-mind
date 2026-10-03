@@ -101,7 +101,6 @@ export function apply(ctx: Context): void {
       lastConsoleActivityAt = Date.now()
     },
     presenceState: (opts?: { excludeSessionId?: string }) => {
-      const consoleActive = lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000
       const strongest = presenceSnapshot?.strongest ?? 'none'
       const sampledAt = presenceSnapshot !== undefined ? new Date(presenceSnapshot.at).toISOString() : undefined
       // P1.5 修正二（遥测实证）：engagedElsewhere = 排除提问会话自身后，仍有
@@ -112,8 +111,11 @@ export function apply(ctx: Context): void {
       )
       return {
         strongest,
-        atComputer: consoleActive,
-        atComputerSource: 'console',
+        // P1.5 最终语义（17:02 遥测实证）：atComputer = 纯会话信号——控制台
+        // 活跃信号存在未知自刷新源（主人离开后仍持续刷新，isTrusted 过滤
+        // 无效），在本机环境不可靠，降级为纯遥测不再参与判定。
+        atComputer: strongest === 'master-facing',
+        atComputerSource: 'session',
         engagedElsewhere,
         ...(sampledAt !== undefined ? { sampledAt } : {}),
         ...(lastConsoleActivityAt > 0 ? { lastConsoleActivityAt } : {}),
