@@ -100,14 +100,21 @@ export function apply(ctx: Context): void {
     touchConsoleActivity: (): void => {
       lastConsoleActivityAt = Date.now()
     },
-    presenceState: () => {
+    presenceState: (opts?: { excludeSessionId?: string }) => {
       const consoleActive = lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000
       const strongest = presenceSnapshot?.strongest ?? 'none'
       const sampledAt = presenceSnapshot !== undefined ? new Date(presenceSnapshot.at).toISOString() : undefined
+      // P1.5 修正二（遥测实证）：engagedElsewhere = 排除提问会话自身后，仍有
+      // 其他 master-facing 会话在被服务——提问升级的路由门（比 atComputer
+      // 可靠：不受控制台活跃信号未知自刷新源的影响，纯 session/list）。
+      const engagedElsewhere = (presenceSnapshot?.peers ?? []).some(
+        p => p.kind === 'master-facing' && p.sessionId !== (opts?.excludeSessionId ?? ''),
+      )
       return {
         strongest,
         atComputer: consoleActive,
         atComputerSource: 'console',
+        engagedElsewhere,
         ...(sampledAt !== undefined ? { sampledAt } : {}),
         ...(lastConsoleActivityAt > 0 ? { lastConsoleActivityAt } : {}),
       }
@@ -834,16 +841,22 @@ export function apply(ctx: Context): void {
     /** P1.5 在场感知查询（task-board 审批升级门控消费）：最近一次在场采样——
      *  strongest=master-facing 表示主人正在电脑旁（有会话在被服务），审批走
      *  控制台即可，不必打扰 IM。采样缺失（心智未起）→ none=无法确认在场。 */
-    presenceState(): { strongest: 'master-facing' | 'background' | 'none'; atComputer: boolean; atComputerSource: 'console' | 'session'; sampledAt?: string } {
+    presenceState(opts?: { excludeSessionId?: string }): { strongest: 'master-facing' | 'background' | 'none'; atComputer: boolean; atComputerSource: 'console' | 'session'; engagedElsewhere: boolean; sampledAt?: string } {
       const s = presenceSnapshot
       const strongest = s?.strongest ?? 'none'
       // P1.5 在场融合：控制台活跃（2 分钟内）或 engaged → 在电脑旁（可即刻处理）
       const consoleActive = lastConsoleActivityAt > 0 && Date.now() - lastConsoleActivityAt < 120_000
       const atComputer = consoleActive
+      // P1.5 修正二（遥测实证）：排除提问会话自身后仍有其他 master-facing 会话
+      // 在被服务——提问升级的路由门（纯 session/list，不受控制台活跃信号影响）。
+      const engagedElsewhere = (s?.peers ?? []).some(
+        p => p.kind === 'master-facing' && p.sessionId !== (opts?.excludeSessionId ?? ''),
+      )
       return {
         strongest,
         atComputer,
         atComputerSource: 'console',
+        engagedElsewhere,
         ...(s !== undefined ? { sampledAt: new Date(s.at).toISOString() } : {}),
       }
     },
