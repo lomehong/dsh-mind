@@ -51,6 +51,12 @@ export function ActivitySensor(): null {
     // → 提问升级的门永远打不开（递归盲区第二形态，2026-10-03 生产复现）。
     const markDirty = (e?: { isTrusted?: boolean }): void => {
       if (e !== undefined && e.isTrusted !== true) return
+      // P1.5 自刷新根修（00:14 取证实锤）：分身 turn 启动时壳层把窗口自动
+      // 弹到前台（vis=visible focus=false），OS 在鼠标下方投递真实 mousemove
+      // （isTrusted=true）→ 伪造「控制台活跃」→ 门控永远判定在场。
+      // 修复：要求窗口持有焦点（document.hasFocus()）才计为活跃——真实使用
+      // 时窗口必然聚焦；自动显示但无焦点的假信号被排除。
+      if (document.hasFocus() !== true) return
       dirty = true
     }
     const onTick = (): void => {
