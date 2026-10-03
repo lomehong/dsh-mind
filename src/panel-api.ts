@@ -200,7 +200,9 @@ export function registerPanelApi(
         try {
           const body = JSON.parse(await readBody(req)) as { at?: number; mounts?: number; vis?: string; focus?: boolean; href?: string }
           const line = `${new Date().toISOString()} activity: mounts=${body.mounts ?? '?'} vis=${body.vis ?? '?'} focus=${body.focus ?? '?'} hash=${body.href ?? '?'}\n`
-          appendFileSync(join(deps.logDir?.() ?? '.', 'console-activity-debug.log'), line, { flag: 'a' })
+          const dir = deps.logDir?.() ?? '.'
+          mkdirSync(dir, { recursive: true })
+          appendFileSync(join(dir, 'console-activity-debug.log'), line, { flag: 'a' })
         } catch { /* 诊断落盘失败不影响主链路 */ }
       })()
       deps.touchConsoleActivity?.()
