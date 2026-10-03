@@ -34,7 +34,14 @@ export function ActivitySensor(): null {
         pending = false
       })()
     }
-    const markDirty = (): void => { dirty = true }
+    // P1.5 修正（遥测实证第二形态）：只认「可信事件」——浏览器规范保证用户
+    // 真实输入 isTrusted=true，程序化滚动/渲染引发的合成事件为 false。
+    // 不加此过滤：agent 自己的输出流引发页面自动滚动 → 刷新自己的在场信号
+    // → 提问升级的门永远打不开（递归盲区第二形态，2026-10-03 生产复现）。
+    const markDirty = (e?: { isTrusted?: boolean }): void => {
+      if (e !== undefined && e.isTrusted !== true) return
+      dirty = true
+    }
     const onTick = (): void => {
       if (!dirty) return
       dirty = false
@@ -44,10 +51,10 @@ export function ActivitySensor(): null {
     lastSentAt = Date.now()
     report()
     const timer = setInterval(onTick, 3000)
-    document.addEventListener('mousemove', markDirty, { passive: true })
-    document.addEventListener('keydown', markDirty, true)
-    document.addEventListener('click', markDirty, true)
-    document.addEventListener('scroll', markDirty, { passive: true, capture: true })
+    document.addEventListener('mousemove', (e) => markDirty(e), { passive: true })
+    document.addEventListener('keydown', (e) => markDirty(e), true)
+    document.addEventListener('click', (e) => markDirty(e), true)
+    document.addEventListener('scroll', (e) => markDirty(e), { passive: true, capture: true })
     return () => {
       clearInterval(timer)
       document.removeEventListener('mousemove', markDirty)
