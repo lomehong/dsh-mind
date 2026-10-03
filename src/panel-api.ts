@@ -48,6 +48,8 @@ export interface PanelDeps {
   touchConsoleActivity?(): void
   /** P1.5 在场遥测（status 端点透出，外部可实测信号翻转）。 */
   presenceState?(): { strongest: string; atComputer: boolean; atComputerSource: string; sampledAt?: string } & { lastConsoleActivityAt?: number }
+  /** P1.5 诊断落盘目录（timeline 同级；console-activity 自刷新源定位用）。 */
+  logDir?(): string
 }
 
 /** 写门禁键：每次进程启动随机生成，不落盘（重启即换；先例 dsh-memory）。 */
@@ -186,6 +188,7 @@ export function registerPanelApi(
 
   // P1.5 控制台活动信号（在场融合输入源）：POST 仅记录「控制台最近被使用」
   // 的时间戳（写门禁）——不含任何输入内容。由 shell.overlay 常驻客户端节流上报。
+  // P1.5 诊断：每次上报落盘（重挂计数/可见性/焦点/hash）——自刷新源定位用。
   web.register({
     kind: 'exact',
     path: '/dsh-mind/console-activity',
@@ -193,6 +196,13 @@ export function registerPanelApi(
       if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
       if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method not allowed' })
       if (!writeGate(req, res)) return
+      void (async () => {
+        try {
+          const body = JSON.parse(await readBody(req)) as { at?: number; mounts?: number; vis?: string; focus?: boolean; href?: string }
+          const line = `${new Date().toISOString()} activity: mounts=${body.mounts ?? '?'} vis=${body.vis ?? '?'} focus=${body.focus ?? '?'} hash=${body.href ?? '?'}\n`
+          appendFileSync(join(deps.logDir?.() ?? '.', 'console-activity-debug.log'), line, { flag: 'a' })
+        } catch { /* 诊断落盘失败不影响主链路 */ }
+      })()
       deps.touchConsoleActivity?.()
       json(res, 200, { ok: true })
     },

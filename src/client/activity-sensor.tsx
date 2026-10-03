@@ -11,8 +11,13 @@ import { writeKey } from './api.ts'
 
 const REPORT_THROTTLE_MS = 25_000
 
+/** P1.5 诊断：重挂计数——若宿主反复重挂本组件，每次挂载的上报会伪装成用户活跃。 */
+let mountSeq = 0
+
 export function ActivitySensor(): null {
   useEffect(() => {
+    mountSeq += 1
+    const mounts = mountSeq
     let lastSentAt = 0
     let dirty = false
     let pending = false
@@ -28,7 +33,13 @@ export function ActivitySensor(): null {
           await fetch('/dsh-mind/console-activity', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-mind-key': key },
-            body: JSON.stringify({ at: now }),
+            body: JSON.stringify({
+              at: now,
+              mounts,
+              vis: document.visibilityState,
+              focus: document.hasFocus(),
+              href: location.hash.slice(0, 40),
+            }),
           })
         } catch { /* 传感器静默：绝不影响页面 */ }
         pending = false

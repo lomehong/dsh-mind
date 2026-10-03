@@ -30,6 +30,8 @@ export interface PanelDeps {
     } & {
         lastConsoleActivityAt?: number;
     };
+    /** P1.5 诊断落盘目录（timeline 同级；console-activity 自刷新源定位用）。 */
+    logDir?(): string;
 }
 export declare function registerPanelApi(web: {
     register(route: {

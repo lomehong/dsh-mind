@@ -9,6 +9,7 @@
  * 任何接缝异常绝不击穿宿主（LESSONS 2）。
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { join } from 'node:path'
 import { loadMindConfig, mindHome, type MindConfig } from './config.ts'
 import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
@@ -96,6 +97,8 @@ export function apply(ctx: Context): void {
     },
     isRunning: (): boolean => running,
     reactiveQueued: (): number => reactiveQueue.length,
+    /** P1.5 诊断落盘目录（timeline 同级）。 */
+    logDir: (): string => join(mindHome(), 'timeline'),
     /** P1.5 控制台活动触点（shell.overlay 客户端心跳；在场融合输入源）。 */
     touchConsoleActivity: (): void => {
       lastConsoleActivityAt = Date.now()
