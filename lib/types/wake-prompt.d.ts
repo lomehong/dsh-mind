@@ -55,6 +55,30 @@ export interface WakePromptInputs {
         desc: string;
         ts: string;
     }> | undefined;
+    /** P2 跟进议程 + 意图模型（四层机制：推理层深度分析的输入与产出契约） */
+    agenda?: {
+        intent: {
+            role: string;
+            workPatterns: string[];
+            longTermConcerns: string[];
+            contactPreferences: string[];
+        };
+        confirmed: ReadonlyArray<{
+            id: string;
+            what: string;
+            touchpoint: {
+                keywords: string[];
+            };
+            expectedResult: string;
+        }>;
+        proposals: ReadonlyArray<{
+            id: string;
+            what: string;
+            expectedResult: string;
+        }>;
+        /** 深度分析到期：本拍菜单压倒为「分析模式」——产出结构化议程/意图更新 */
+        analysisDue: boolean;
+    } | undefined;
     now: Date;
 }
 export declare const FALLBACK_GUARD: string;

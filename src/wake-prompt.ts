@@ -36,6 +36,14 @@ export interface WakePromptInputs {
   observeMode?: boolean | undefined
   /** P1 让位期积压的世界变化（结束后的第一拍合并注入并清空） */
   backlog?: ReadonlyArray<{ desc: string; ts: string }> | undefined
+  /** P2 跟进议程 + 意图模型（四层机制：推理层深度分析的输入与产出契约） */
+  agenda?: {
+    intent: { role: string; workPatterns: string[]; longTermConcerns: string[]; contactPreferences: string[] }
+    confirmed: ReadonlyArray<{ id: string; what: string; touchpoint: { keywords: string[] }; expectedResult: string }>
+    proposals: ReadonlyArray<{ id: string; what: string; expectedResult: string }>
+    /** 深度分析到期：本拍菜单压倒为「分析模式」——产出结构化议程/意图更新 */
+    analysisDue: boolean
+  } | undefined
   now: Date
 }
 
@@ -198,6 +206,45 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   // 议程来源（安静时分身推进的东西）：长期事项 + 主人最近在忙什么
   if (inputs.missions !== undefined && inputs.missions.trim() !== '') {
     sections.push(`## 主人关心的长期事项（安静时优先推进它们）\n\n${inputs.missions.trim()}`)
+  }
+  // P2 四层机制：跟进议程 + 意图模型（推理层深度分析的输入与产出契约）。
+  if (inputs.agenda !== undefined) {
+    const a = inputs.agenda
+    const intentLines: string[] = []
+    if (a.intent.role.trim() !== '') intentLines.push(`- 主人角色：${a.intent.role}`)
+    if (a.intent.workPatterns.length > 0) intentLines.push(`- 工作特征：${a.intent.workPatterns.join('；')}`)
+    if (a.intent.longTermConcerns.length > 0) intentLines.push(`- 长期关注：${a.intent.longTermConcerns.join('；')}`)
+    if (a.intent.contactPreferences.length > 0) intentLines.push(`- 沟通偏好：${a.intent.contactPreferences.join('；')}`)
+    sections.push(`## 你对主人的理解（意图模型——持续修正；与现实不符时在本拍输出中修正它）
+
+${intentLines.length > 0 ? intentLines.join('\n') : '（尚空——通过观察主人的消息/任务/行为逐步自举，禁止编造。）'}`)
+
+    if (a.confirmed.length > 0) {
+      sections.push(`## 跟进议程（主人已确认——新触点命中这些主题时优先深度跟进）
+${a.confirmed.map(i => `- [${i.id}] ${i.what}｜触点词：${i.touchpoint.keywords.join('/')}｜完成标准：${i.expectedResult}`).join('\n')}`)
+    }
+    if (a.proposals.length > 0) {
+      sections.push(`## 待主人确认的推导项（不要重复推导；主人在等这批的裁决结果）
+${a.proposals.map(i => `- [${i.id}] ${i.what}｜完成标准：${i.expectedResult}`).join('\n')}`)
+    }
+
+    if (a.analysisDue) {
+      sections.push(`## 深度分析模式（本拍压倒常规菜单——推理层职责）
+
+本拍的任务只有一个：审阅「最近时间线 + 待处理消息 + 相关记忆」，产出/更新**跟进议程**与**意图模型**。
+
+要求（「不痛不痒」的解药）：
+- 每条推导必须引用**具体证据**（哪条消息/任务/时间线条目，带 id），说明它为什么值得持续跟进；
+- 只推导与主人角色/长期关注相关的事项；拿不准的标 confidence=low；
+- 没有新证据就不硬造——proposals 可以为空数组；
+- 修正意图模型只允许「新增/细化」，不得凭空删除既有理解。
+
+产出契约（FINAL 的最后一行之后必须是如下结构的代码块，解析失败视为本拍无效）：
+\`\`\`agenda
+{"intent":{"workPatterns":["…"],"longTermConcerns":["…"],"contactPreferences":["…"]},"proposals":[{"what":"…","evidence":[{"source":"message_in|task|timeline|memory|meeting","ref":"具体id","note":"这条证据说明了什么"}],"touchpoint":{"keywords":["后续用来匹配新进展的词"]},"expectedResult":"跟进到什么结果算完成","confidence":"high|low"}]}
+\`\`\`
+除了该代码块，FINAL 正文仍按常规格式写清本拍做了什么（一段话即可）。`)
+    }
   }
   // P1 并发感知区块（三态：非空=让位态 / 空=自由态 / 缺席=保守自由态）。
   // recentActivity（旁听主人会话标题）已下架：宿主 session/list 契约无 title

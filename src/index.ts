@@ -14,6 +14,8 @@ import { loadMindConfig, mindHome, type MindConfig } from './config.ts'
 import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
 import { isTransientServiceError, WakeRunner } from './runner.ts'
+import { confirmAgendaItem, learnIntentModel, matchTouchpoints, mergeAgendaProposals, parseAgendaAnalysisBlock, rejectAgendaItem } from './agenda.ts'
+import { loadAgendaState, saveAgendaState } from './agenda-store.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
 import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
@@ -263,10 +265,38 @@ export function apply(ctx: Context): void {
     }
     // 提示词块：心智 Tab 覆盖层优先，缺席回落内置默认（每次唤醒现读，保存即生效）
     const blocks = resolveCurrentBlocks()
+    // P2 四层机制：跟进议程 + 意图模型（加载 → 校准解析 → 触点检测 → 分析到期）
+    let agendaState = loadAgendaState()
+    const calibrationAcks: string[] = []
+    const reactiveItems = reactiveQueue.splice(0, reactiveQueue.length)
+    const normalMessages: Array<{ from: string; text: string }> = []
+    for (const q of reactiveItems) {
+      const m = /^(确认|否决)\s*(AG-[a-z0-9-]+)(?:[：:\s]+(.*))?$/i.exec(q.text.trim())
+      if (m === null) { normalMessages.push({ from: q.from, text: q.text }); continue }
+      const verb = m[1] as string
+      const id = m[2] as string
+      const note = (m[3] ?? '').trim()
+      const applied = verb === '确认'
+        ? confirmAgendaItem(agendaState, id, now.toISOString())
+        : rejectAgendaItem(agendaState, id, note !== '' ? note : '主人否决', now.toISOString())
+      calibrationAcks.push(applied ? `${verb} ${id} ✅ 已生效` : `${verb} ${id} ❌（推导项不存在或状态不允许）`)
+    }
+    if (calibrationAcks.length > 0) {
+      saveAgendaState(agendaState)
+      void deliverToChannels({ to: 'master', text: calibrationAcks.join('\n') })
+    }
+    // 触点检测（执行层廉价匹配）：主人新消息 vs 已确认议程——命中即深度跟进
+    const touchHits = matchTouchpoints(agendaState, normalMessages.map(q => ({ source: 'message_in', text: q.text })))
     // 议程：主人长期事项（missions.md）。P1：recentActivity（旁听主人会话
     // 标题）已下架——宿主 session/list 契约无 title（arch-lead F6，链路哑火）；
     // 在场感知由 presence 快照（并发感知区块）承担。
     const missions = loadMissions()
+    // 推理层 duty 到期判定：距上次深度分析 ≥2h，或累积新观察 ≥3，或触点命中
+    const stateForDuty = loadState()
+    const lastAnalysis = stateForDuty.agendaAnalysisAt ?? 0
+    const observationsSince = stateForDuty.agendaObservations ?? 0
+    const analysisDue = (now.getTime() - lastAnalysis >= 2 * 3_600_000) || observationsSince >= 3 || touchHits.length > 0
+
     const prompt = buildWakePrompt({
       identityName: '分身',
       guard,
@@ -280,7 +310,17 @@ export function apply(ctx: Context): void {
       activeSessions: (presenceSnapshot?.peers ?? []).map(p => ({ sessionId: p.sessionId, kind: p.kind })),
       observeMode: opts?.observe === true,
       backlog: state.backlog ?? [],
-      pendingMessages: reactiveQueue.splice(0, reactiveQueue.length).map(q => ({ from: q.from, text: q.text })),
+      pendingMessages: normalMessages,
+      agenda: {
+        intent: agendaState.intent,
+        confirmed: agendaState.items
+          .filter(i => i.status === 'confirmed' || i.status === 'tracking')
+          .map(i => ({ id: i.id, what: i.what, touchpoint: i.touchpoint, expectedResult: i.expectedResult })),
+        proposals: agendaState.items
+          .filter(i => i.status === 'proposed')
+          .map(i => ({ id: i.id, what: i.what, expectedResult: i.expectedResult })),
+        analysisDue,
+      },
       stalePendings: stalePendings(loadState().openPendings, now.getTime()),
       openAsks: (state.openAsks ?? [])
         .filter(a => a.state === 'open')
@@ -313,6 +353,33 @@ export function apply(ctx: Context): void {
     if ((state.approvalRejections ?? []).length > 0) {
       state.approvalRejections = decayRejections(state.approvalRejections ?? [], now.getTime())
       state.pendingApprovals = state.approvalRejections.length
+    }
+    // P2 推理层产出解析：```agenda``` 块 → 意图模型自举 + 议程合并（proposed 待主人确认）
+    const agendaAnalysis = parseAgendaAnalysisBlock(result.final)
+    if (agendaAnalysis !== undefined) {
+      if (agendaAnalysis.intent !== undefined) agendaState = learnIntentModel(agendaState, agendaAnalysis.intent, new Date().toISOString())
+      const merged = mergeAgendaProposals(agendaState, (agendaAnalysis.proposals ?? []).map(p => ({
+        what: p.what ?? '',
+        evidence: p.evidence ?? [],
+        touchpoint: {
+          keywords: p.touchpoint?.keywords ?? [],
+          ...(p.touchpoint?.sources !== undefined ? { sources: p.touchpoint.sources } : {}),
+        },
+        expectedResult: p.expectedResult ?? '',
+        confidence: p.confidence === 'high' ? 'high' as const : 'low' as const,
+      })), new Date().toISOString())
+      agendaState = merged.state
+      saveAgendaState(agendaState)
+      state.agendaAnalysisAt = now.getTime()
+      state.agendaObservations = 0
+      if (merged.added.length > 0) {
+        const listing = merged.added.map((i, idx) => `${idx + 1}. [${i.id}] ${i.what}\n    依据：${i.evidence.map(e => e.note).join('；') || '（主人指示）'}\n    完成标准：${i.expectedResult || '（未定义）'}`).join('\n')
+        void deliverToChannels({ to: 'master', text: `我从近期观察中推导出 ${merged.added.length} 条值得跟进的事项，请裁决（回复「确认 [id]」或「否决 [id]：原因」）：\n\n${listing}` })
+      }
+    } else if (touchHits.length > 0) {
+      // 触点命中但本拍未走分析模式：至少让主人知道某条已确认议程有了新进展
+      const hitLines = touchHits.map(h => `- [${h.item.id}] ${h.item.what}（触点：${h.event.text.slice(0, 60)}）`).join('\n')
+      void deliverToChannels({ to: 'master', text: `跟进议程有新触点：\n${hitLines}\n\n如需我深入跟进请回复「跟进 [id]」。` })
     }
     state.lastSeq += 1
     const wakeStep: TimelineStep = {

@@ -32,6 +32,9 @@ export function loadState(): SchedulerState {
     // pendingApprovals 防护：显式 null/undefined（跨版本/竞态写入）归零
     base.pendingApprovals = Number(base.pendingApprovals) || 0
     base.idleStreak = Number(base.idleStreak) || 0
+    // P2 议程推理 duty 防护：负值/坏类型归零（宁缺毋错）
+    base.agendaAnalysisAt = Number(base.agendaAnalysisAt) || 0
+    base.agendaObservations = Number(base.agendaObservations) || 0
     // openPendings 防护：非数组/坏条目丢弃（承诺账宁缺毋错）
     base.openPendings = Array.isArray(base.openPendings)
       ? base.openPendings.filter(p =>

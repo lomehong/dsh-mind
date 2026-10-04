@@ -84,6 +84,10 @@ export interface SchedulerState {
         desc: string;
         ts: string;
     }>;
+    /** P2 推理层 duty：上次深度分析（议程推导/意图模型更新）时刻 */
+    agendaAnalysisAt?: number;
+    /** P2 推理层 duty：上次分析以来累积的新观察条数（message_in/task） */
+    agendaObservations?: number;
 }
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
 export declare const IDLE_STEP_EVERY = 6;
