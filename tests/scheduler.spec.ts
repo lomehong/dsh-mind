@@ -29,8 +29,9 @@ describe('退避阶梯', () => {
     expect(nextDelayMs(cfg, 0)).toBe(300000)
     expect(nextDelayMs(cfg, 1)).toBe(300000)
     expect(nextDelayMs(cfg, 2)).toBe(300000)
-    expect(nextDelayMs(cfg, 7)).toBe(300000)
-    expect(nextDelayMs(cfg, 20)).toBe(300000)
+    // P1.6 封顶 4h 后阶梯真实生效：L7=5s×2^6=320000 越过地板；L20 到达 4h 封顶
+    expect(nextDelayMs(cfg, 7)).toBe(320000)
+    expect(nextDelayMs(cfg, 20)).toBe(14400000)
   })
 
   it('地板可配置：调低地板后回到原阶梯（5s×2^(n-1) 夹 cap）', () => {
@@ -38,7 +39,7 @@ describe('退避阶梯', () => {
     expect(nextDelayMs(fast, 0)).toBe(5000)
     expect(nextDelayMs(fast, 1)).toBe(5000)
     expect(nextDelayMs(fast, 2)).toBe(10000)
-    expect(nextDelayMs(fast, 7)).toBe(300000)
+    expect(nextDelayMs(fast, 7)).toBe(320000)
   })
 
   it('engaged 归零连转；empty 按 HOLD=3 逐档降', () => {

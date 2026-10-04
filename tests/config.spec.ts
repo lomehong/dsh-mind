@@ -53,6 +53,6 @@ describe('loadMindConfig fail-safe', () => {
     writeFileSync(join(dshHome, 'dsh-mind', 'config.json'), '{broken json!!', 'utf8')
     const broken = loadMindConfig(Date.now() + 60000)
     expect(broken.enabled).toBe(true)
-    expect(broken.backoffCapMs).toBe(300000)
+    expect(broken.backoffCapMs).toBe(14400000)
   })
 })
