@@ -36,6 +36,22 @@ describe('mergeAgendaProposals（推理层产出合并）', () => {
     expect(r.state.items[0].evidence).toHaveLength(1)
   })
 
+  it('语义相似的新推导 → 更新既有项而非新增（多轮分析去重）', () => {
+    let s = emptyAgendaState(NOW)
+    const r1 = mergeAgendaProposals(s, [{
+      what: '跟进主人对第一根真实数据管道的三选一决策',
+      id: 'AG-d1',
+      evidence: [{ source: 'timeline', ref: 's-1', note: '设计对话' }],
+    }], NOW)
+    s = r1.state
+    const r2 = mergeAgendaProposals(s, [{
+      what: '跟进主人对『第一根真实数据管道』的三选一决策（avatar-tools 会议与通讯／真实企微群／工作文档目录）',
+      evidence: [{ source: 'timeline', ref: 's-2', note: '再次出现' }],
+    }], NOW)
+    expect(r2.added).toEqual([])
+    expect(r2.updated).toHaveLength(1)
+    expect(s.items.filter(i => i.what.includes('数据管道'))).toHaveLength(1)
+  })
   it('已存在项按 id 更新（不重复插入）', () => {
     const base = mergeAgendaProposals(emptyAgendaState(NOW), [{
       what: 'A 事项', id: 'AG-x',

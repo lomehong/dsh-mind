@@ -35,6 +35,8 @@ export function loadState(): SchedulerState {
     // P2 议程推理 duty 防护：负值/坏类型归零（宁缺毋错）
     base.agendaAnalysisAt = Number(base.agendaAnalysisAt) || 0
     base.agendaObservations = Number(base.agendaObservations) || 0
+    // P2 会话作用域 token 计数（会话重置时清零——修复按日累计破阈值导致每拍新建会话的失忆churn）
+    base.sessionTokensIn = Number(base.sessionTokensIn) || 0
     // openPendings 防护：非数组/坏条目丢弃（承诺账宁缺毋错）
     base.openPendings = Array.isArray(base.openPendings)
       ? base.openPendings.filter(p =>

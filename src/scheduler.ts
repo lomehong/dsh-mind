@@ -63,6 +63,8 @@ export interface SchedulerState {
   agendaAnalysisAt?: number
   /** P2 推理层 duty：上次分析以来累积的新观察条数（message_in/task） */
   agendaObservations?: number
+  /** P2 会话作用域 token 累计（mind 会话自上次重置以来的 tokensIn；复用判定用它，不用当日累计） */
+  sessionTokensIn?: number
 }
 
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */

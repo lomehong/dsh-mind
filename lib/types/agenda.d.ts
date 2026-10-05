@@ -73,6 +73,13 @@ export declare function newAgendaId(now?: number): string;
  * 主人指示项（evidence 为空但 source=master 标记）视为高置信。
  * 已 done/rejected 的项不被同名新推导复活（防翻旧账）。
  */
+/** 议程项语义相似判定（去重用）：归一化后前缀重叠 ≥12 字符视为同项。 */
+export declare function agendaWhatSimilar(a: string, b: string): boolean;
+/**
+ * 合并推理层产出：按 id 更新已存在项；语义重复（agendaWhatSimilar，多轮分析堆
+ * 语义重复的实测缺陷 2026-10-05）→ 更新既有项而非新增；新 id 且带 ≥1 证据
+ * （或主人指示）→ 插入为 proposed。已 done/rejected 不被复活（防翻旧账）。
+ */
 export declare function mergeAgendaProposals(state: AgendaState, proposals: Array<Partial<AgendaItem> & {
     what: string;
 }>, now?: string): {
