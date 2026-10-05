@@ -40,12 +40,16 @@ export const provide = ['dsh-mind']
 
 const TICK_MS = 1000
 
-/** 触发源 → 函数菜单结果映射（idle/watchdog 合成唤醒除外）。 */
-function outcomeOf(final: string, toolCalls: number): WakeOutcome {
-  // FINAL 可能带 [fn] 前缀（提示词要求的输出格式）
+/** 触发源 → 函数菜单结果映射（idle/watchdog 合成唤醒除外）。
+ *  P2 修正（主人「无用功」反馈的机制层根因）：旧规则把 >60 字的 FINAL 一律
+ *  算 engaged——不痛不痒的长 thought 每拍重置退避，间隔永不拉长。新规则：
+ *  engaged 只认真实产出（act 且真用了工具 / share / ask）；纯思维类按空转
+ *  退避（思考无产出不该维持高频唤醒——真正的产出会带工具调用痕迹）。 */
+function outcomeOf(final: string, fn: string, toolCalls: number): WakeOutcome {
   if (/^\[?\s*idle\b/i.test(final.trim())) return 'empty'
   if (toolCalls > 0) return 'engaged'
-  return final.trim().length > 60 ? 'engaged' : 'thought'
+  if (fn === 'share' || fn === 'ask') return 'engaged'
+  return 'thought'
 }
 
 export function apply(ctx: Context): void {
@@ -337,7 +341,7 @@ export function apply(ctx: Context): void {
     // 全文搜首个标记；idle 优先按 fn 判定——误判 think 会让退避永不生长（v0.2.1 实测事故）
     const fn = fnOf(result.final)
     const finalText = result.final.replace(/^\[\s*(?:act|share|ask|think|learn|recall|goals|idle)\s*\]\s*/i, '')
-    const outcome: WakeOutcome = fn === 'idle' ? 'empty' : fn === 'ask' ? 'engaged' : outcomeOf(finalText, result.toolCalls)
+    const outcome: WakeOutcome = fn === 'idle' ? 'empty' : outcomeOf(finalText, fn, result.toolCalls)
     const cost = costUsd(cfg, result.tokensIn, result.tokensOut)
 
     // 台账推进（按日清零）+ 时间线 + 退避推进 + 下次排程
