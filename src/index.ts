@@ -720,12 +720,12 @@ export function apply(ctx: Context): void {
         logger.info?.(`[dsh-mind] 请求账升级重投递 ${escalations.length} 条`)
       }
       s.lastWakeAt = Date.now()
-      const advanced = advanceAfterWake(s, 'empty', cfgNow)
-      advanced.lastSeq = s.lastSeq
-      advanced.lastWakeAt = s.lastWakeAt
-      advanced.idleStreak = s.idleStreak
-      advanced.wakeAt = Date.now() + nextDelayMs(cfgNow, advanced.backoffLevel)
-      saveState(advanced)
+      // P2 修正（主人确认的设计：5 分钟廉价检查必须保留）：机械空醒是零 LLM
+      // 成本的触点检查，不推进退避、恒按地板续排——退避只作用于「调了 LLM
+      // 却无真实产出」的唤醒（runWake 完成路径的 advanceAfterWake）。
+      s.wakeAt = Date.now() + cfgNow.minSpontaneousIntervalMs
+      s.idleStreak = streak
+      saveState(s)
     } catch (e) {
       logger.warn?.('[dsh-mind] 机械空醒失败（不阻断）:', e instanceof Error ? e.message : String(e))
     }
