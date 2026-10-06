@@ -36,6 +36,8 @@ export interface WakePromptInputs {
   observeMode?: boolean | undefined
   /** P1 让位期积压的世界变化（结束后的第一拍合并注入并清空） */
   backlog?: ReadonlyArray<{ desc: string; ts: string }> | undefined
+  /** P2 第六触发源：今日真实会议（avatar-tools 拉取；空=今日无会或拉取未启用） */
+  avatarMeetings?: ReadonlyArray<{ title: string; start: string; source?: string }> | undefined
   /** P2 跟进议程 + 意图模型（四层机制：推理层深度分析的输入与产出契约） */
   agenda?: {
     intent: { role: string; workPatterns: string[]; longTermConcerns: string[]; contactPreferences: string[] }
@@ -211,6 +213,13 @@ export function buildWakePrompt(inputs: WakePromptInputs, blocks: PromptBlocks =
   // 议程来源（安静时分身推进的东西）：长期事项 + 主人最近在忙什么
   if (inputs.missions !== undefined && inputs.missions.trim() !== '') {
     sections.push(`## 主人关心的长期事项（安静时优先推进它们）\n\n${inputs.missions.trim()}`)
+  }
+  // P2 第六触发源：今日真实会议（真实世界证据——深度分析时优先从中推导跟进事项）
+  if (inputs.avatarMeetings !== undefined && inputs.avatarMeetings.length > 0) {
+    const meetingLines = inputs.avatarMeetings
+      .map(m => `- ${m.title ?? '(无题)'}${m.start ? '  @ ' + m.start : ''}${m.source ? '  [' + m.source + ']' : ''}`)
+      .join('\n')
+    sections.push(`## 今日真实会议（avatar-tools 实时拉取）\n\n${meetingLines}\n\n深度分析时优先从中推导跟进事项：会议决议、产生的承诺、未决问题。`)
   }
   // P2 四层机制：跟进议程 + 意图模型（推理层深度分析的输入与产出契约）。
   if (inputs.agenda !== undefined) {

@@ -15,6 +15,7 @@ import { GatewayClient, type TypertGateway } from './gateway.ts'
 import { registerPanelApi } from './panel-api.ts'
 import { isTransientServiceError, WakeRunner } from './runner.ts'
 import { confirmAgendaItem, learnIntentModel, matchTouchpoints, mergeAgendaProposals, parseAgendaAnalysisBlock, rejectAgendaItem } from './agenda.ts'
+import { pullAvatarMeetings, todaysMeetings } from './avatar.ts'
 import { loadAgendaState, saveAgendaState } from './agenda-store.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
 import { extractGoalEntries, settleGoals } from './goals.ts'
@@ -291,15 +292,38 @@ export function apply(ctx: Context): void {
     }
     // 触点检测（执行层廉价匹配）：主人新消息 vs 已确认议程——命中即深度跟进
     const touchHits = matchTouchpoints(agendaState, normalMessages.map(q => ({ source: 'message_in', text: q.text })))
+    // P2 第六触发源：真实世界拉取（avatar 会议；30 分钟节流，失败/未配 token 静默）
+    let avatarMeetings: Array<{ title: string; start: string; source?: string }> = []
+    let avatarHit = false
+    try {
+      const nowMs = now.getTime()
+      if (nowMs - (state.avatarLastPullAt ?? 0) >= 30 * 60_000) {
+        const pulled = await pullAvatarMeetings(process.env.AVATAR_AGENT_TOKEN)
+        state.avatarLastPullAt = nowMs
+        if (pulled !== undefined) {
+          avatarMeetings = todaysMeetings(pulled.meetings, now).map(m => ({ title: m.title ?? '', start: m.start ?? '', ...(m.source !== undefined ? { source: m.source } : {}) }))
+          avatarHit = pulled.fingerprint !== (state.avatarFingerprint ?? '')
+          state.avatarFingerprint = pulled.fingerprint
+          state.avatarToday = JSON.stringify(avatarMeetings)
+          saveState(state)
+          logger.info?.(`[dsh-mind] avatar 会议拉取: 今日 ${avatarMeetings.length} 场 fingerprint=${avatarHit ? '变化' : '不变'}`)
+        }
+      } else if (state.avatarToday) {
+        try { avatarMeetings = JSON.parse(state.avatarToday) as Array<{ title: string; start: string; source?: string }> } catch { avatarMeetings = [] }
+      }
+    } catch (e) {
+      logger.warn?.('[dsh-mind] avatar 会议拉取异常（静默降级）:', e instanceof Error ? e.message : String(e))
+    }
     // 议程：主人长期事项（missions.md）。P1：recentActivity（旁听主人会话
     // 标题）已下架——宿主 session/list 契约无 title（arch-lead F6，链路哑火）；
     // 在场感知由 presence 快照（并发感知区块）承担。
     const missions = loadMissions()
-    // 推理层 duty 到期判定：距上次深度分析 ≥2h，或累积新观察 ≥3，或触点命中
+    // 推理层 duty 到期判定：距上次深度分析 ≥2h，或累积新观察 ≥3，或触点命中，
+    // 或 avatar 会议快照变化/今日有会（第六触发源）
     const stateForDuty = loadState()
     const lastAnalysis = stateForDuty.agendaAnalysisAt ?? 0
     const observationsSince = stateForDuty.agendaObservations ?? 0
-    const analysisDue = (now.getTime() - lastAnalysis >= 2 * 3_600_000) || observationsSince >= 3 || touchHits.length > 0
+    const analysisDue = (now.getTime() - lastAnalysis >= 2 * 3_600_000) || observationsSince >= 3 || touchHits.length > 0 || avatarMeetings.length > 0 || avatarHit
 
     const prompt = buildWakePrompt({
       identityName: '分身',
@@ -315,6 +339,7 @@ export function apply(ctx: Context): void {
       observeMode: opts?.observe === true,
       backlog: state.backlog ?? [],
       pendingMessages: normalMessages,
+      avatarMeetings,
       agenda: {
         intent: agendaState.intent,
         confirmed: agendaState.items

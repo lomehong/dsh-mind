@@ -55,6 +55,12 @@ export interface WakePromptInputs {
         desc: string;
         ts: string;
     }> | undefined;
+    /** P2 第六触发源：今日真实会议（avatar-tools 拉取；空=今日无会或拉取未启用） */
+    avatarMeetings?: ReadonlyArray<{
+        title: string;
+        start: string;
+        source?: string;
+    }> | undefined;
     /** P2 跟进议程 + 意图模型（四层机制：推理层深度分析的输入与产出契约） */
     agenda?: {
         intent: {
