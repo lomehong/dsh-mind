@@ -292,22 +292,28 @@ export function apply(ctx: Context): void {
     }
     // 触点检测（执行层廉价匹配）：主人新消息 vs 已确认议程——命中即深度跟进
     const touchHits = matchTouchpoints(agendaState, normalMessages.map(q => ({ source: 'message_in', text: q.text })))
-    // P2 第六触发源：真实世界拉取（avatar 会议；30 分钟节流，失败/未配 token 静默）
+    // P2 第六触发源：真实世界拉取（avatar 会议；30 分钟节流——成败均持久化节流戳；
+    // 失败原因落日志：token 未注入 / 网络失败 可分辨）
     let avatarMeetings: Array<{ title: string; start: string; source?: string }> = []
     let avatarHit = false
+    let avatarNote = ''
     try {
       const nowMs = now.getTime()
       if (nowMs - (state.avatarLastPullAt ?? 0) >= 30 * 60_000) {
-        const pulled = await pullAvatarMeetings(process.env.AVATAR_AGENT_TOKEN)
         state.avatarLastPullAt = nowMs
-        if (pulled !== undefined) {
+        const token = process.env.AVATAR_AGENT_TOKEN
+        const pulled = await pullAvatarMeetings(token)
+        if (pulled === undefined) {
+          avatarNote = token ? '拉取失败（网络/服务/凭据无效）' : 'AVATAR_AGENT_TOKEN 未注入运行时环境'
+          logger.warn?.(`[dsh-mind] avatar 会议拉取未成功: ${avatarNote}（30 分钟后重试）`)
+        } else {
           avatarMeetings = todaysMeetings(pulled.meetings, now).map(m => ({ title: m.title ?? '', start: m.start ?? '', ...(m.source !== undefined ? { source: m.source } : {}) }))
           avatarHit = pulled.fingerprint !== (state.avatarFingerprint ?? '')
           state.avatarFingerprint = pulled.fingerprint
           state.avatarToday = JSON.stringify(avatarMeetings)
-          saveState(state)
           logger.info?.(`[dsh-mind] avatar 会议拉取: 今日 ${avatarMeetings.length} 场 fingerprint=${avatarHit ? '变化' : '不变'}`)
         }
+        saveState(state)
       } else if (state.avatarToday) {
         try { avatarMeetings = JSON.parse(state.avatarToday) as Array<{ title: string; start: string; source?: string }> } catch { avatarMeetings = [] }
       }
