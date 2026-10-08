@@ -307,7 +307,7 @@ export function apply(ctx: Context): void {
         try {
           const diagDir = join(mindHome(), 'timeline')
           mkdirSync(diagDir, { recursive: true })
-          const diagLine = new Date().toISOString() + ' pull: ' + (pulledRes.ok === false ? 'FAIL ' + pulledRes.reason : 'OK meetings=' + pulledRes.meetings.length) + '\n'
+          const diagLine = new Date().toISOString() + ' pull: ' + (pulledRes.ok === false ? 'FAIL ' + pulledRes.reason : 'OK meetings=' + pulledRes.meetings.length) + ' | token头8字符=' + (token ? token.slice(0, 8) : '(无)') + ' len=' + (token ? token.length : 0) + '\n'
           appendFileSync(join(diagDir, 'avatar-debug.log'), diagLine, { flag: 'a' })
         } catch { }
         if (pulledRes.ok === false) {
