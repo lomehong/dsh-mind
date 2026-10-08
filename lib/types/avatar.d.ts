@@ -13,7 +13,16 @@ export interface AvatarPull {
     meetings: AvatarMeeting[];
     fingerprint: string;
 }
-/** 拉取会议列表（组合源）；任何失败静默。 */
-export declare function pullAvatarMeetings(token: string | undefined, timeoutMs?: number): Promise<AvatarPull | undefined>;
+export interface AvatarPullOk {
+    ok: true;
+    meetings: AvatarMeeting[];
+    fingerprint: string;
+}
+export interface AvatarPullFail {
+    ok: false;
+    reason: string;
+}
+/** 拉取会议列表（组合源）；失败原因精确透出（401=token 无效/过期，需御符重签）。 */
+export declare function pullAvatarMeetings(token: string | undefined, timeoutMs?: number): Promise<AvatarPullOk | AvatarPullFail>;
 /** 今日（本地时区）会议过滤。 */
 export declare function todaysMeetings(meetings: AvatarMeeting[], now: Date): AvatarMeeting[];

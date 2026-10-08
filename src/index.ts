@@ -303,20 +303,20 @@ export function apply(ctx: Context): void {
       if (nowMs - (state.avatarLastPullAt ?? 0) >= 30 * 60_000) {
         state.avatarLastPullAt = nowMs
         const token = process.env.AVATAR_AGENT_TOKEN
-        const pulled = await pullAvatarMeetings(token)
+        const pulledRes = await pullAvatarMeetings(token)
         try {
           const diagDir = join(mindHome(), 'timeline')
           mkdirSync(diagDir, { recursive: true })
-          const diagLine = new Date().toISOString() + ' pull: ' + (pulled === undefined ? (token ? 'FAIL network/service' : 'NO_TOKEN env missing') : 'OK meetings=' + pulled.meetings.length) + '\n'
+          const diagLine = new Date().toISOString() + ' pull: ' + (pulledRes.ok === false ? 'FAIL ' + pulledRes.reason : 'OK meetings=' + pulledRes.meetings.length) + '\n'
           appendFileSync(join(diagDir, 'avatar-debug.log'), diagLine, { flag: 'a' })
         } catch { }
-        if (pulled === undefined) {
-          avatarNote = token ? '拉取失败（网络/服务/凭据无效）' : 'AVATAR_AGENT_TOKEN 未注入运行时环境'
+        if (pulledRes.ok === false) {
+          avatarNote = pulledRes.reason
           logger.warn?.(`[dsh-mind] avatar 会议拉取未成功: ${avatarNote}（30 分钟后重试）`)
         } else {
-          avatarMeetings = todaysMeetings(pulled.meetings, now).map(m => ({ title: m.title ?? '', start: m.start ?? '', ...(m.source !== undefined ? { source: m.source } : {}) }))
-          avatarHit = pulled.fingerprint !== (state.avatarFingerprint ?? '')
-          state.avatarFingerprint = pulled.fingerprint
+          avatarMeetings = todaysMeetings(pulledRes.meetings, now).map(m => ({ title: m.title ?? '', start: m.start ?? '', ...(m.source !== undefined ? { source: m.source } : {}) }))
+          avatarHit = pulledRes.fingerprint !== (state.avatarFingerprint ?? '')
+          state.avatarFingerprint = pulledRes.fingerprint
           state.avatarToday = JSON.stringify(avatarMeetings)
           logger.info?.(`[dsh-mind] avatar 会议拉取: 今日 ${avatarMeetings.length} 场 fingerprint=${avatarHit ? '变化' : '不变'}`)
         }

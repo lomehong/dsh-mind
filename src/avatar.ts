@@ -16,15 +16,27 @@ export interface AvatarPull {
   fingerprint: string
 }
 
-/** 拉取会议列表（组合源）；任何失败静默。 */
-export async function pullAvatarMeetings(token: string | undefined, timeoutMs = 20000): Promise<AvatarPull | undefined> {
-  if (!token) return undefined
+export interface AvatarPullOk {
+  ok: true
+  meetings: AvatarMeeting[]
+  fingerprint: string
+}
+
+export interface AvatarPullFail {
+  ok: false
+  reason: string
+}
+
+/** 拉取会议列表（组合源）；失败原因精确透出（401=token 无效/过期，需御符重签）。 */
+export async function pullAvatarMeetings(token: string | undefined, timeoutMs = 20000): Promise<AvatarPullOk | AvatarPullFail> {
+  if (!token) return { ok: false, reason: 'AVATAR_AGENT_TOKEN 未注入运行时环境' }
   try {
     const res = await fetch('https://twin.hzins.com/avatar/api/meeting?limit=10', {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(timeoutMs),
     })
-    if (!res.ok) return undefined
+    if (res.status === 401) return { ok: false, reason: 'HTTP 401——token 无效或已过期，需御符（ai-huntian.hzins.com）重新签发并更新环境变量' }
+    if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` }
     const j = (await res.json()) as { meetings?: Array<Record<string, unknown>> }
     const list = Array.isArray(j?.meetings) ? j.meetings : []
     const meetings: AvatarMeeting[] = list.map(m => ({
@@ -34,9 +46,9 @@ export async function pullAvatarMeetings(token: string | undefined, timeoutMs = 
       ...(m.source !== undefined && m.source !== null ? { source: String(m.source) } : {}),
     }))
     const fingerprint = JSON.stringify(meetings.map(m => [m.id ?? '', m.title ?? '', m.start ?? '']))
-    return { meetings, fingerprint }
-  } catch {
-    return undefined
+    return { ok: true, meetings, fingerprint }
+  } catch (e) {
+    return { ok: false, reason: `fetch 异常: ${e instanceof Error ? e.message : String(e)}` }
   }
 }
 
