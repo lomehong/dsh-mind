@@ -9,7 +9,8 @@
  * 任何接缝异常绝不击穿宿主（LESSONS 2）。
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { loadMindConfig, mindHome, type MindConfig } from './config.ts'
 import { GatewayClient, type TypertGateway } from './gateway.ts'
@@ -302,12 +303,30 @@ export function apply(ctx: Context): void {
       const nowMs = now.getTime()
       if (nowMs - (state.avatarLastPullAt ?? 0) >= 30 * 60_000) {
         state.avatarLastPullAt = nowMs
-        const token = process.env.AVATAR_AGENT_TOKEN
-        const pulledRes = await pullAvatarMeetings(token)
+        // P2 修正（主人指正）：avatar 网关与御驿 hub 同源鉴权——token 即本适配器的
+        // agent token（凭证域 YUYI_TOKEN，与 dsh-yuyi resolveToken 同源），非环境变量。
+        let avatarToken: string | undefined
+        try {
+          const credentials = ctx.get('credentials') as
+            | { resolve?: (ref: unknown) => Promise<{ value: string } | undefined> }
+            | undefined
+          const credModName = '@deepseek-ai/dsh-credentials'
+          const credMod = (await import(/* @vite-ignore */ credModName)) as { credentialRef?: (name: string) => unknown }
+          if (credMod?.credentialRef === undefined) throw new Error('credentials 模块缺席')
+          const ref = credMod.credentialRef('YUYI_TOKEN')
+          if (credentials?.resolve !== undefined) {
+            const hit = await credentials.resolve(ref) as { value: string } | undefined
+            avatarToken = hit?.value
+          }
+        } catch { /* 凭证缺席静默 */ }
+        if (avatarToken === undefined) {
+          try { avatarToken = readFileSync(join(homedir(), '.yuyi', 'dsh-token'), 'utf8').trim() || undefined } catch { }
+        }
+        const pulledRes = await pullAvatarMeetings(avatarToken)
         try {
           const diagDir = join(mindHome(), 'timeline')
           mkdirSync(diagDir, { recursive: true })
-          const diagLine = new Date().toISOString() + ' pull: ' + (pulledRes.ok === false ? 'FAIL ' + pulledRes.reason : 'OK meetings=' + pulledRes.meetings.length) + ' | token头8字符=' + (token ? token.slice(0, 8) : '(无)') + ' len=' + (token ? token.length : 0) + '\n'
+          const diagLine = new Date().toISOString() + ' pull: ' + (pulledRes.ok === false ? 'FAIL ' + pulledRes.reason : 'OK meetings=' + pulledRes.meetings.length) + ' | token头8字符=' + (avatarToken ? avatarToken.slice(0, 8) : '(无)') + ' len=' + (avatarToken ? avatarToken.length : 0) + '\n'
           appendFileSync(join(diagDir, 'avatar-debug.log'), diagLine, { flag: 'a' })
         } catch { }
         if (pulledRes.ok === false) {
