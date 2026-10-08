@@ -90,12 +90,6 @@ export interface SchedulerState {
     agendaObservations?: number;
     /** P2 会话作用域 token 累计（mind 会话自上次重置以来的 tokensIn；复用判定用它，不用当日累计） */
     sessionTokensIn?: number;
-    /** P2 第六触发源：avatar 会议拉取节流 */
-    avatarLastPullAt?: number;
-    /** P2 avatar 会议快照指纹（变更=有新会议/新动态） */
-    avatarFingerprint?: string;
-    /** P2 今日会议缓存（节流窗口内复用） */
-    avatarToday?: string;
 }
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
 export declare const IDLE_STEP_EVERY = 6;
