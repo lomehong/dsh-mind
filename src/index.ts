@@ -9,6 +9,7 @@
  * 任何接缝异常绝不击穿宿主（LESSONS 2）。
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadMindConfig, mindHome, type MindConfig } from './config.ts'
 import { GatewayClient, type TypertGateway } from './gateway.ts'
@@ -303,6 +304,12 @@ export function apply(ctx: Context): void {
         state.avatarLastPullAt = nowMs
         const token = process.env.AVATAR_AGENT_TOKEN
         const pulled = await pullAvatarMeetings(token)
+        try {
+          const diagDir = join(mindHome(), 'timeline')
+          mkdirSync(diagDir, { recursive: true })
+          const diagLine = new Date().toISOString() + ' pull: ' + (pulled === undefined ? (token ? 'FAIL network/service' : 'NO_TOKEN env missing') : 'OK meetings=' + pulled.meetings.length) + '\n'
+          appendFileSync(join(diagDir, 'avatar-debug.log'), diagLine, { flag: 'a' })
+        } catch { }
         if (pulled === undefined) {
           avatarNote = token ? '拉取失败（网络/服务/凭据无效）' : 'AVATAR_AGENT_TOKEN 未注入运行时环境'
           logger.warn?.(`[dsh-mind] avatar 会议拉取未成功: ${avatarNote}（30 分钟后重试）`)
