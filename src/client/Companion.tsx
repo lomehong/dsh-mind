@@ -177,7 +177,7 @@ function RecentLife(): JSX.Element {
             <div key={n.seq} style={{ fontSize: 12 }}>
               <details>
                 <summary style={{ cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'baseline', color: SUB, listStyle: 'revert' }}>
-                  <span style={{ whiteSpace: 'nowrap', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>
+                  <span style={{ whiteSpace: 'nowrap', fontSize: 11, fontFamily: 'var(--ds-font-family-code, ui-monospace), ui-monospace, monospace' }}>
                     {fmtClock(n.fold.fromTs)}~{fmtClock(n.fold.toTs)}
                   </span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.title}</span>
@@ -185,7 +185,7 @@ function RecentLife(): JSX.Element {
                 <div style={{ padding: '2px 0 2px 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {n.fold.items.map(item => (
                     <div key={item.seq} style={{ display: 'flex', gap: 8, color: SUB, fontSize: 11 }}>
-                      <span style={{ fontFamily: 'ui-monospace, monospace' }}>{fmtClock(item.ts)}</span>
+                      <span style={{ fontFamily: 'var(--ds-font-family-code, ui-monospace), ui-monospace, monospace' }}>{fmtClock(item.ts)}</span>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
                     </div>
                   ))}
@@ -201,7 +201,7 @@ function RecentLife(): JSX.Element {
             : `${n.title}${n.body !== undefined && n.body !== '' ? `：${n.body.slice(0, 60)}` : ''}`
         return (
           <div key={n.seq} style={{ display: 'flex', gap: 8, fontSize: 12, alignItems: 'baseline' }}>
-            <span style={{ color: SUB, whiteSpace: 'nowrap', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>{fmtClock(n.ts)}</span>
+            <span style={{ color: SUB, whiteSpace: 'nowrap', fontSize: 11, fontFamily: 'var(--ds-font-family-code, ui-monospace), ui-monospace, monospace' }}>{fmtClock(n.ts)}</span>
             <span style={{
               minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               color: n.kind === 'rest' ? SUB : n.kind === 'you' ? 'var(--dsw-alias-label-primary, #eee)' : undefined,

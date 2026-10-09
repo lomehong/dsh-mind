@@ -185,7 +185,7 @@ function StepDetailModal({ step, onPrev, onNext, onClose }: {
         {/* 头部第一行：类型徽标 + seq + 步进导航 + 关闭 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 0', flex: '0 0 auto' }}>
           {typeChip(step.type, step.fn)}
-          <span style={{ color: SUB, fontSize: 11.5, fontFamily: 'ui-monospace, monospace' }}>#{step.seq}</span>
+          <span style={{ color: SUB, fontSize: 11.5, fontFamily: 'var(--ds-font-family-code, ui-monospace), ui-monospace, monospace' }}>#{step.seq}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
             <NavBtn disabled={onPrev === undefined} onClick={onPrev} title="更早一步（←）">‹</NavBtn>
             <NavBtn disabled={onNext === undefined} onClick={onNext} title="更晚一步（→）">›</NavBtn>
@@ -222,7 +222,7 @@ function StepDetailModal({ step, onPrev, onNext, onClose }: {
               <div style={{ fontSize: 11, color: SUB, marginBottom: 4, letterSpacing: '.04em' }}>引用</div>
               {Object.entries(full.refs).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', gap: 8, fontSize: 12, lineHeight: 1.8 }}>
-                  <span style={{ color: BRAND, fontFamily: 'ui-monospace, monospace', flex: '0 0 auto' }}>{k}</span>
+                  <span style={{ color: BRAND, fontFamily: 'var(--ds-font-family-code, ui-monospace), ui-monospace, monospace', flex: '0 0 auto' }}>{k}</span>
                   <span style={{ color: SUB, wordBreak: 'break-all' }}>{v}</span>
                 </div>
               ))}
@@ -360,7 +360,7 @@ export function EngView({ status, refresh }: { status: StatusPayload | undefined
                   onMouseEnter={(e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.08))' }}
                   onMouseLeave={(e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                 >
-                  <span style={{ color: SUB, fontFamily: 'ui-monospace, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                  <span style={{ color: SUB, fontFamily: 'var(--ds-font-family-code, ui-monospace), ui-monospace, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
                     {new Date(step.ts).toLocaleTimeString('zh-CN', { hour12: false })}
                   </span>
                   {typeChip(step.type, step.fn)}
