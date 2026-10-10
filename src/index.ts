@@ -17,6 +17,7 @@ import { registerPanelApi } from './panel-api.ts'
 import { isTransientServiceError, WakeRunner } from './runner.ts'
 import { confirmAgendaItem, learnIntentModel, matchTouchpoints, mergeAgendaProposals, parseAgendaAnalysisBlock, rejectAgendaItem } from './agenda.ts'
 import { loadAgendaState, saveAgendaState } from './agenda-store.ts'
+import { registerMindTools } from './tools.ts'
 import { deliverToChannels, registerMindChannel } from './channels.ts'
 import { extractGoalEntries, settleGoals } from './goals.ts'
 import { pushPending, resolvePendingsBefore, stalePendings } from './pendings.ts'
@@ -56,6 +57,35 @@ function outcomeOf(final: string, fn: string, toolCalls: number): WakeOutcome {
 export function apply(ctx: Context): void {
   const logger = ctx.logger ?? console
   logger.info?.('[dsh-mind] 心智运行时已加载（P1 心智本体）')
+
+  // P2 全模式心智工具挂载（宪章 §0 同款模式，2026-10-10）：mind_status/
+  // mind_timeline/mind_say 此前仅经 digital-twin 预设行挂进预设会话——其他
+  // 会话（含主人的 Web 会话）拿不到（共享记忆实测 116 拍缺席的结构性根因）。
+  // 观察宿主 agent 生命周期：有记忆视角登记的会话（IM 按行动者身份挂过记忆
+  // 工具=访客/通讯对端）跳过——时间线对访客不可见（硬规则）；未登记会话
+  // （主人 Web 会话/心智自身会话）挂载心智工具。失败只影响工具面，绝不击穿宿主。
+  try {
+    const events = ctx as unknown as { on?: (event: string, handler: (...args: never[]) => unknown) => void }
+    if (typeof events.on === 'function') {
+      events.on('agent/status', (payload: unknown): void => {
+        try {
+          const agentCtx = (payload as { agent?: { ctx?: unknown } } | undefined)?.agent?.ctx
+          if (agentCtx === null || typeof agentCtx !== 'object') return
+          let imMounted = false
+          try {
+            const memory = ctx.get('dsh-memory') as { memoryViewerOf?: (c: unknown) => unknown } | undefined
+            if (memory?.memoryViewerOf !== undefined && memory.memoryViewerOf(agentCtx) !== undefined) imMounted = true
+          } catch { /* dsh-memory 缺席：按未登记处理 */ }
+          if (imMounted) return
+          registerMindTools(agentCtx as Context)
+        } catch { /* 单会话挂载失败不影响其他会话 */ }
+      })
+      ctx.logger?.info?.('[dsh-mind] 全模式心智工具挂载已启用（非 IM 会话=主人视角）')
+    }
+  } catch (error) {
+    logger.warn?.('[dsh-mind] 全模式心智工具挂载注册失败（工具面不受影响）:',
+      error instanceof Error ? error.message : String(error))
+  }
 
   let running = false
   let disposed = false
