@@ -1,0 +1,241 @@
+<!doctype html>
+<!--
+  分身的一天 · 办公室视图（P3）：心智时间线的空间化渲染。
+  数据源：/dsh-mind/status + /dsh-mind/timeline（同源 GET，浏览器信任围栏内直读）。
+  零依赖、零构建：本页由 dsh-mind 的 HTTP 面直接伺服（/dsh-mind/office）。
+  渲染纪律（Office 同款）：零状态——真相源始终是时间线，本页只做空间与行为语言。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分身的一天 · 办公室</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    min-height: 100vh; background: #10141a; color: #e8eaee;
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    overflow-x: hidden;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 14px 22px 8px; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .meta { font-size: 12px; color: #9aa2ad; }
+  header .sp { margin-left: auto; }
+  #sky { position: fixed; inset: 0; z-index: 0; transition: background 1.2s; pointer-events: none; }
+  #scene-wrap { position: relative; z-index: 1; height: calc(100vh - 150px); min-height: 520px; overflow: hidden; }
+  /* 等距地面：rotateX + rotateZ，格纹地垫 */
+  #floor {
+    position: absolute; left: 50%; top: 55%;
+    width: 900px; height: 900px; margin: -450px 0 0 -450px;
+    transform: rotateX(58deg) rotateZ(45deg);
+    transform-style: preserve-3d;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 75px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, transparent 1px 75px),
+      linear-gradient(135deg, #232a33, #1b2027);
+    border: 1px solid rgba(255,255,255,.09);
+  }
+  /* 设施：等距块（顶面+两个侧面的伪 3D） */
+  .prop {
+    position: absolute; transform-style: preserve-3d;
+    font-size: 11px; color: #b8c2cc;
+  }
+  .prop .top {
+    position: absolute; left: 0; top: 0; width: 130px; height: 130px;
+    transform: rotateZ(45deg);
+    background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
+    border: 1px solid rgba(255,255,255,.16); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .prop .top .ic { font-size: 26px; transform: rotateZ(-45deg); }
+  .prop .lbl {
+    position: absolute; left: 0; top: 140px; width: 130px; text-align: center;
+    transform: rotateZ(45deg); opacity: .85;
+  }
+  .prop.active .top { border-color: rgba(122,240,220,.65); box-shadow: 0 0 18px rgba(79,179,169,.35); }
+  /* 分身：发光球体（Being 同视觉语言） */
+  #being {
+    position: absolute; width: 46px; height: 46px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, rgba(79,179,169,1), rgb(79,179,169) 52%, rgba(79,179,169,.55) 100%);
+    box-shadow: 0 0 26px rgba(79,179,169,.6);
+    transform: translate(-50%, -50%);
+    transition: left 1.1s cubic-bezier(.4,0,.2,1), top 1.1s cubic-bezier(.4,0,.2,1);
+    z-index: 5;
+  }
+  #being::after {
+    content: ''; position: absolute; left: 14px; top: 10px; width: 18px; height: 24px;
+    background: rgba(8,12,18,.72); border-radius: 50% 50% 42% 42%;
+  }
+  /* 气泡 */
+  #bubble {
+    position: absolute; max-width: 340px; padding: 8px 12px; border-radius: 12px;
+    background: rgba(20,24,30,.95); border: 1px solid rgba(255,255,255,.18);
+    font-size: 13px; z-index: 6; transition: left 1.1s cubic-bezier(.4,0,.2,1), top 1.1s cubic-bezier(.4,0,.2,1);
+    transform: translate(-50%, -120%);
+  }
+  #bubble .t { font-size: 11px; color: #9aa2ad; margin-bottom: 2px; }
+  /* 控制条 */
+  #ctrl {
+    position: relative; z-index: 2; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 22px 16px;
+  }
+  #ctrl button, #ctrl select, #ctrl input {
+    font: inherit; font-size: 12.5px; color: #e8eaee;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 8px; padding: 4px 12px; cursor: pointer;
+  }
+  #scrub { flex: 1; min-width: 200px; accent-color: #4fc2b1; }
+  #cap {
+    position: relative; z-index: 2; max-width: 760px; margin: 4px 22px 20px; padding: 10px 14px;
+    border-left: 3px solid #4fc2b1; background: rgba(255,255,255,.05); border-radius: 8px;
+    font-size: 13px; min-height: 44px; white-space: pre-wrap;
+  }
+  .empty { padding: 30px 22px; color: #9aa2ad; }
+</style>
+</head>
+<body>
+<div id="sky"></div>
+<header>
+  <h1>分身的一天 · 办公室</h1>
+  <span class="meta" id="meta">加载中…</span>
+  <span class="meta sp" id="spend"></span>
+</header>
+<div id="scene-wrap">
+  <div id="floor">
+    <div class="prop" id="p-desk" style="left: 330px; top: 300px;"><div class="top"><span class="ic">💻</span></div><div class="lbl">工位 · act/think</div></div>
+    <div class="prop" id="p-book" style="left: 620px; top: 260px;"><div class="top"><span class="ic">📖</span></div><div class="lbl">书架 · learn</div></div>
+    <div class="prop" id="p-goal" style="left: 560px; top: 560px;"><div class="top"><span class="ic">🎯</span></div><div class="lbl">白板 · goals</div></div>
+    <div class="prop" id="p-coffee" style="left: 250px; top: 620px;"><div class="top"><span class="ic">☕</span></div><div class="lbl">咖啡角 · idle</div></div>
+    <div class="prop" id="p-rest" style="left: 700px; top: 700px;"><div class="top"><span class="ic">🛏</span></div><div class="lbl">休息角 · 静音</div></div>
+    <div class="prop" id="p-door" style="left: 60px; top: 470px;"><div class="top"><span class="ic">🚪</span></div><div class="lbl">门口 · message_in</div></div>
+    <div id="being" style="left: 380px; top: 380px;"></div>
+  </div>
+  <div id="bubble" style="left: 380px; top: 330px; display: none;"><div class="t" id="bubble-t"></div><div id="bubble-b"></div></div>
+</div>
+<div id="cap">按「播放」回放分身的一天；或切「实时」跟随 TA 此刻的状态。</div>
+<div id="ctrl">
+  <button id="play">▶ 播放</button>
+  <select id="speed"><option value="2200">1×</option><option value="1100" selected>2×</option><option value="550">4×</option></select>
+  <input id="scrub" type="range" min="0" max="0" value="0">
+  <button id="live">● 实时</button>
+  <span class="meta" id="stepno"></span>
+</div>
+<div id="cap2"><div id="cap"></div></div>
+<script>
+'use strict'
+const $ = id => document.getElementById(id)
+const being = $('being'), bubble = $('bubble')
+let steps = []          // {ts, kind, spot, title, body}
+let idx = -1
+let timer = null
+let liveMode = false
+const SPOTS = {
+  desk: [380, 380], book: [655, 330], goal: [595, 625], coffee: [285, 685],
+  rest: [735, 765], door: [95, 535], window: [430, 180],
+}
+function spotFor(kind, fn) {
+  if (kind === 'message_in' || kind === 'you') return 'door'
+  if (kind === 'rest') return 'coffee'
+  const f = (fn ?? '').toLowerCase()
+  if (f === 'learn') return 'book'
+  if (f === 'goals') return 'goal'
+  if (f === 'act' || f === 'think' || f === 'wake') return 'desk'
+  if (f === 'share' || f === 'message_out') return 'window'
+  if (f === 'ask') return 'goal'
+  return 'desk'
+}
+function titleOf(s) {
+  if (s.type === 'message_in') return '收到你的话'
+  if (s.fn === 'ask') return '有事等你给'
+  if (s.fn === 'act') return '干了一件活'
+  if (s.fn === 'learn') return '学了点东西'
+  if (s.fn === 'think') return '想了件事'
+  if (s.fn === 'share') return '分享了产出'
+  if (s.fn === 'goals') return '理了目标'
+  if (s.type === 'idle') return '歇了一会儿'
+  if (s.type === 'error') return '唤醒失败（已自愈/待查）'
+  return s.fn ? `唤醒（${s.fn}）` : (s.type ?? '…')
+}
+function hhmm(ts) { const d = new Date(ts); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') }
+function skyByHour(h) {
+  if (h >= 6 && h < 8) return 'linear-gradient(180deg,#2c3a52,#1b2027)'
+  if (h >= 8 && h < 17) return 'linear-gradient(180deg,#2a3648,#161b22)'
+  if (h >= 17 && h < 20) return 'linear-gradient(180deg,#3a3040,#1b2027)'
+  return 'linear-gradient(180deg,#141a24,#0e1218)'
+}
+function show(i) {
+  const s = steps[i]
+  if (s === undefined) return
+  const spot = SPOTS[s.spot] ?? SPOTS.desk
+  being.style.left = spot[0] + 'px'
+  being.style.top = spot[1] + 'px'
+  bubble.style.left = spot[0] + 'px'
+  bubble.style.top = (spot[1] - 40) + 'px'
+  $('bubble-t').textContent = hhmm(s.ts) + ' · ' + s.title
+  $('bubble-b').textContent = s.body ?? ''
+  bubble.style.display = 'block'
+  $('sky').style.background = skyByHour(new Date(s.ts).getHours())
+  $('stepno').textContent = `第 ${i + 1} / ${steps.length} 步`
+  $('scrub').value = String(i)
+  $('cap').textContent = (s.body ?? s.title)
+}
+async function load() {
+  try {
+    const [stR, tlR] = await Promise.all([fetch('/dsh-mind/status'), fetch('/dsh-mind/timeline?n=150')])
+    const st = await stR.json()
+    const tl = await tlR.json()
+    const feed = Array.isArray(tl.steps) ? tl.steps : []
+    const now = Date.now()
+    const horizon = now - 1000 * 60 * 60 * 36 // 最近 36 小时
+    steps = feed
+      .filter(s => { const t = Date.parse(s.ts); return Number.isFinite(t) && t >= horizon })
+      .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))
+      .map(s => ({ ts: s.ts, kind: s.type, fn: s.fn ?? '', title: titleOf(s), body: (s.content ?? '').slice(0, 220) }))
+    $('meta').textContent = `分身 · 时间线最近 ${steps.length} 步（36 小时窗口）· 数据 ${
+      steps.length > 0 ? hhmm(steps[steps.length - 1].ts) : '—'
+    }`
+    $('spend').textContent = st.spend ? `今日心思 $${st.spend.usedUsd.toFixed(2)} / $${st.spend.hardCapUsd}` : ''
+    $('scrub').max = String(Math.max(0, steps.length - 1))
+    if (steps.length > 0) show(steps.length - 1)
+    else { $('cap').textContent = '36 小时内没有时间线步骤——分身还没醒过，或数据尚在。' }
+  } catch (e) { $('meta').textContent = '加载失败：' + (e instanceof Error ? e.message : String(e)) }
+}
+async function goLive() {
+  try {
+    const st = await (await fetch('/dsh-mind/status')).json()
+    const running = st.running === true
+    const quiet = st.quiet?.active === true
+    const spot = quiet ? 'rest' : running ? 'desk' : 'coffee'
+    const p = SPOTS[spot]
+    being.style.left = p[0] + 'px'
+    being.style.top = p[1] + 'px'
+    bubble.style.display = 'none'
+    $('sky').style.background = skyByHour(new Date().getHours())
+    $('stepno').textContent = quiet ? '静音时段 · 睡着' : running ? '正在想/干 · 实时' : '醒着 · 实时'
+    $('cap').textContent = quiet ? '静音时段——TA 在休息角睡着，醒来会接着排。' : running ? 'TA 正在工位上干活。' : 'TA 醒着，在咖啡角待命。'
+  } catch { /* 静默 */ }
+}
+$('play').addEventListener('click', () => {
+  if (timer !== null) { clearInterval(timer); timer = null; $('play').textContent = '▶ 播放'; return }
+  if (steps.length === 0) return
+  idx = (idx + 1) % steps.length
+  show(idx)
+  $('play').textContent = '⏸ 暂停'
+  timer = setInterval(() => {
+    idx = (idx + 1) % steps.length
+    show(idx)
+    if (idx === steps.length - 1) { clearInterval(timer); timer = null; $('play').textContent = '▶ 播放' }
+  }, Number($('speed').value))
+})
+$('scrub').addEventListener('input', () => { if (timer !== null) { clearInterval(timer); timer = null; $('play').textContent = '▶ 播放' } idx = Number($('scrub').value); show(idx) })
+$('live').addEventListener('click', () => { if (timer !== null) { clearInterval(timer); timer = null } goLive() })
+void load()
+void goLive()
+setInterval(goLive, 60000)
+</script>
+</body>
+</html>

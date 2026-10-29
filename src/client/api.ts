@@ -129,6 +129,46 @@ export async function fetchRange(fromMs: number, toMs: number): Promise<FeedStep
   return body.steps ?? []
 }
 
+
+export interface MindAsk {
+  id: string
+  what: string
+  why?: string
+  howto?: string
+  goalTitle?: string
+  ageHours: number
+}
+
+/** P5 请求账 open 清单（今日待办/手机层的请求单数据源）。 */
+export async function fetchAsks(): Promise<MindAsk[]> {
+  const resp = await fetch('/dsh-mind/asks')
+  const body = (await resp.json()) as { ok?: boolean; asks?: MindAsk[] }
+  return Array.isArray(body.asks) ? body.asks : []
+}
+
+/** 答复请求单（结清 + 注入时间线并触发反应性唤醒）。401 时重取键重试一次。 */
+export async function answerMindAsk(id: string, answer: string): Promise<{ ok: boolean; error?: string }> {
+  const post = async (): Promise<{ status: number; body: { ok: boolean; error?: string } }> => {
+    const key = await writeKey()
+    const resp = await fetch('/dsh-mind/asks/answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-mind-key': key },
+      body: JSON.stringify({ id, answer }),
+    })
+    return { status: resp.status, body: (await resp.json()) as { ok: boolean; error?: string } }
+  }
+  try {
+    let r = await post()
+    if (r.status === 401) {
+      keyPromise = undefined
+      r = await post()
+    }
+    return r.body
+  } catch (e) {
+    keyPromise = undefined
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
 export interface PromptBlockInfo {
   key: 'menu' | 'rules' | 'outputFormat' | 'style'
   label: string

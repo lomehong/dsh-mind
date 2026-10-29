@@ -19,6 +19,7 @@
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { MindConfig } from './config.ts'
@@ -115,6 +116,23 @@ export function registerPanelApi(
       if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
       if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method not allowed' })
       json(res, 200, { ok: true, key: gateKey })
+    },
+  })
+
+  // P3 办公室视图：心智时间线的空间化渲染页（静态单文件，同源直读时间线）。
+  web.register({
+    kind: 'exact',
+    path: '/dsh-mind/office',
+    handler: (req, res) => {
+      if (!sameOrigin(req)) return json(res, 403, { ok: false, error: 'cross-origin denied' })
+      if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method not allowed' })
+      try {
+        const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'office.html'), 'utf8')
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(html)
+      } catch (error) {
+        json(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
+      }
     },
   })
 

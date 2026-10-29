@@ -4,9 +4,12 @@
  * 身体语言：呼吸节奏、光的色温与明暗、内部涌动、涟漪。
  * 实现纪律：形状/颜色全部内联（不依赖注入类，防宿主级联覆盖）；
  * 注入的 <style> 只含 @keyframes；颜色用预计算 rgba（不用 color-mix，
- * 兼容旧 Chromium）。beingMood 纯函数在 narrate.ts（测试覆盖）。
+ * 兼容旧 Chromium）。beingMood/beingGlyph/beingRhythm/beingDim 纯函数在 narrate.ts（测试覆盖）。
+ *
+ * v0.10.39 剧场化（P0/P1）：活动铭牌（glyph+label）、呼吸节律倍率（rhythm）、
+ * 光晕明度（dim）与漂浮反馈（hearts/coffee/poke）。
  */
-import { beingMood, type BeingStatusInput } from '../narrate.ts'
+import { beingMood, beingGlyph, beingRhythm, beingDim, type BeingStatusInput, type BeingTheaterInput } from '../narrate.ts'
 
 interface MoodStyle { rgb: string; breath: string; swirl: number; dim: number }
 
@@ -28,14 +31,24 @@ function injectKeyframes(): void {
 @keyframes dsh-mind-breathe { from { transform: scale(.93); } to { transform: scale(1.07); } }
 @keyframes dsh-mind-spin { to { transform: rotate(360deg); } }
 @keyframes dsh-mind-ripple { from { transform: scale(1); opacity: .5; } to { transform: scale(2.2); opacity: 0; } }
-@keyframes dsh-mind-chest { from { transform: scaleY(1); } to { transform: scaleY(1.06); } }`
+@keyframes dsh-mind-chest { from { transform: scaleY(1); } to { transform: scaleY(1.06); } }
+@keyframes dsh-mind-floatup { from { transform: translate(-50%, 0); opacity: 1; } to { transform: translate(-50%, -30px); opacity: 0; } }`
   document.head.appendChild(el)
+}
+
+export interface BeingFx {
+  kind: 'hearts' | 'coffee' | 'poke'
+  seq: number
 }
 
 export interface BeingProps {
   /** 直径（px）。 */
   size: number
   status?: BeingStatusInput
+  /** 剧场输入（P0/P1）：铭牌/节律/明度推导——直传宿主 status 即可（结构同形）。 */
+  theater?: BeingTheaterInput
+  /** 漂浮反馈（摸头=hearts / 喂咖啡=coffee / 戏闹=poke），seq 变化即飘一次。 */
+  fx?: BeingFx
   /** 光晕中隐现人形剪影（默认开）。 */
   silhouette?: boolean
   /** 收到你的话时的涟漪（默认按 pending 自动）。 */
@@ -43,25 +56,47 @@ export interface BeingProps {
   style?: React.CSSProperties
 }
 
+/** 漂浮 emoji（key=seq：变化即重挂载重放动画）。 */
+function FloatFx({ kind, seq, size }: { kind: 'hearts' | 'coffee' | 'poke'; seq: number; size: number }): JSX.Element {
+  const emoji = kind === 'hearts' ? '💞' : kind === 'coffee' ? '☕' : '😵'
+  return (
+    <div
+      key={seq}
+      style={{
+        position: 'absolute', top: -size * 0.18, left: '50%',
+        fontSize: Math.max(14, size * 0.22), pointerEvents: 'none',
+        animation: 'dsh-mind-floatup 1.6s ease-out forwards',
+      }}
+    >
+      {emoji}
+    </div>
+  )
+}
+
 /** 存在体本体。 */
-export function Being({ size, status, silhouette = true, ripple, style }: BeingProps): JSX.Element {
+export function Being({ size, status, theater, fx, silhouette = true, ripple, style }: BeingProps): JSX.Element {
   injectKeyframes()
+  const input = theater ?? status
   const mood = beingMood(status)
   const m = MOODS[mood]
   const showRipple = ripple ?? mood === 'attentive'
-  const breath = `dsh-mind-breathe ${m.breath} ease-in-out infinite alternate`
+  const g = beingGlyph(input)
+  const rhythm = beingRhythm(input)
+  const dimScale = beingDim(input)
+  const breathSec = Math.round(parseFloat(m.breath) * rhythm * 10) / 10
+  const breath = `dsh-mind-breathe ${breathSec}s ease-in-out infinite alternate`
   return (
     <div style={{ position: 'relative', width: size, height: size, borderRadius: '50%', animation: breath, ...style }}>
       {/* 光晕 */}
       <div style={{
         position: 'absolute', left: -size * 0.3, top: -size * 0.3, width: size * 1.6, height: size * 1.6,
-        borderRadius: '50%', pointerEvents: 'none', opacity: m.dim, animation: breath,
+        borderRadius: '50%', pointerEvents: 'none', opacity: m.dim * dimScale, animation: breath,
         background: `radial-gradient(circle, rgba(${m.rgb},.42) 0%, rgba(${m.rgb},0) 68%)`,
         filter: `blur(${Math.max(5, Math.round(size * 0.09))}px)`,
       }} />
       {/* 本体 */}
       <div style={{
-        position: 'absolute', inset: 0, borderRadius: '50%', overflow: 'hidden', opacity: m.dim,
+        position: 'absolute', inset: 0, borderRadius: '50%', overflow: 'hidden', opacity: m.dim * dimScale,
         background: `radial-gradient(circle at 35% 30%, rgba(${m.rgb},1) 0%, rgb(${m.rgb}) 52%, rgba(${m.rgb},.55) 100%)`,
         boxShadow: `0 0 ${Math.round(size * 0.34)}px rgba(${m.rgb},.5), inset 0 0 ${Math.round(size * 0.22)}px rgba(255,255,255,.18)`,
       }}>
@@ -87,12 +122,29 @@ export function Being({ size, status, silhouette = true, ripple, style }: BeingP
           }} />
         )}
       </div>
+      {/* 活动铭牌（P0 剧场）：此刻在做什么 */}
+      {g.label !== '' && (
+        <div
+          role="status"
+          style={{
+            position: 'absolute', left: '50%', bottom: -size * 0.14, transform: 'translateX(-50%)',
+            whiteSpace: 'nowrap', fontSize: Math.max(11, size * 0.1), lineHeight: 1.5,
+            padding: '1px 8px', borderRadius: 999,
+            background: 'var(--dsw-alias-bg-overlay, rgba(24,26,30,.92))',
+            border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.3))',
+            color: 'var(--dsw-alias-label-secondary, #bbb)',
+          }}
+        >
+          {g.glyph} {g.label}
+        </div>
+      )}
       {showRipple && (
         <div style={{
           position: 'absolute', left: '-6%', top: '-6%', width: '112%', height: '112%', borderRadius: '50%',
           pointerEvents: 'none', border: `2px solid rgb(${m.rgb})`, animation: 'dsh-mind-ripple 1.9s ease-out infinite',
         }} />
       )}
+      {fx !== undefined && fx.seq > 0 && <FloatFx kind={fx.kind} seq={fx.seq} size={size} />}
     </div>
   )
 }

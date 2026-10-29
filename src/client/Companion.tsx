@@ -1,13 +1,17 @@
 /**
  * 常驻存在体（shell.overlay 全帧浮层）：TA 住在 dsh 窗口的右下角。
  * 任何页面 TA 都在那里呼吸；点击就地展开面板——看见 TA、对 TA 说话、
- * 翻翻 TA 最近的生活、照看 TA。容器不拦截操作（pointer-events 穿透）。
+ * 翻翻 TA 最近的生活、照看 TA；右键 TA = 手机（P2：请求单/看板/时间线速览）。
+ * 容器不拦截操作（pointer-events 穿透）。
+ *
+ * v0.10.39 剧场化（P0/P1）：Being 行为铭牌 + 节律环境语言 + 摸头/喂咖啡情绪交互。
  */
 import { useState } from 'react'
 import { coalesceRests, narrateStep, presenceLine } from '../narrate.ts'
-import { fetchFeed, fetchStatus, setMindStopped, usePoll, type StatusPayload } from './api.ts'
+import { fetchFeed, fetchStatus, setMindStopped, usePoll, type StatusPayload, type BeingFx } from './api.ts'
 import { Being } from './Being.tsx'
 import { Composer } from './Composer.tsx'
+import { Phone } from './Phone.tsx'
 import { fmtClock, fmtUsd } from './format.tsx'
 import { openTwinTodos } from './nav.ts'
 
@@ -39,9 +43,9 @@ function AskBadge({ count }: { count: number }): JSX.Element {
 }
 
 /** 展开面板的折叠分节（display:flex 去掉 details 默认三角，自定义箭头）。 */
-function Section({ summary, children }: { summary: string; children: React.ReactNode }): JSX.Element {
+function Section({ summary, children, defaultOpen = false }: { summary: string; children: React.ReactNode; defaultOpen?: boolean }): JSX.Element {
   return (
-    <details style={{ borderTop: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.18))' }}>
+    <details open={defaultOpen} style={{ borderTop: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.18))' }}>
       <summary
         style={{
           cursor: 'pointer', fontSize: 12.5, color: 'var(--dsw-alias-label-secondary, #aaa)',
@@ -61,9 +65,23 @@ function Section({ summary, children }: { summary: string; children: React.React
 /** 右下角存在体 + 就地展开面板（注册到 shell.overlay 的组件）。 */
 export function CompanionLayer(): JSX.Element {
   const [open, setOpen] = useState(false)
+  const [phone, setPhone] = useState(false)
+  const [fx, setFx] = useState<BeingFx>({ kind: 'hearts', seq: 0 })
+  const [petLine, setPetLine] = useState('')
   const status = usePoll(fetchStatus, POLL_STATUS_MS)
   const st = status.data
   const asks = st?.openAsks ?? 0
+  const asleep = st?.quiet?.active === true
+
+  /** 摸头/喂咖啡/戳一下：纯情绪反馈（漂浮动画 + 一句台词），不写任何心智状态。 */
+  const pet = (kind: 'hearts' | 'coffee' | 'poke'): void => {
+    setFx({ kind, seq: fx.seq + 1 })
+    if (asleep && kind === 'poke') setPetLine('嘘——睡着呢。')
+    else if (kind === 'hearts') setPetLine('嗯～被摸到了。')
+    else if (kind === 'coffee') setPetLine('醒脑中——')
+    else setPetLine('哎哟。')
+  }
+
   return (
     <div style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 2147483000, pointerEvents: 'none' }}>
       {open && (
@@ -120,20 +138,44 @@ export function CompanionLayer(): JSX.Element {
             </div>
           )}
 
-          {/* 头部：存在体 + 在场句 */}
+          {/* 头部：存在体 + 在场句 + 情绪交互（P0 剧场） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingRight: 22 }}>
-            <Being size={62} status={st} />
+            <div
+              role="button" aria-label="戳一下分身"
+              title="戳 TA 一下"
+              onClick={() => pet('poke')}
+              style={{ cursor: 'pointer', borderRadius: '50%', flexShrink: 0 }}
+            >
+              <Being size={62} status={st} theater={st} fx={fx} />
+            </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, lineHeight: '20px' }}>分身</div>
               <div style={{ fontSize: 12.5, color: 'var(--dsw-alias-label-secondary, #bbb)', lineHeight: '18px', marginTop: 2 }}>
                 {st !== undefined ? presenceLine(st) : '…'}
+              </div>
+              {petLine !== '' && (
+                <div style={{ fontSize: 11.5, color: 'var(--dsw-alias-state-success-primary, #2A9D8F)', marginTop: 2 }}>{petLine}</div>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 5 }}>
+                <button type="button" title="摸摸头" onClick={() => pet('hearts')}
+                  style={{ padding: '1px 8px', fontSize: 11, cursor: 'pointer', borderRadius: 999, border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.25))', background: 'transparent', color: SUB }}>
+                  摸摸
+                </button>
+                <button type="button" title="递一杯咖啡" onClick={() => pet('coffee')}
+                  style={{ padding: '1px 8px', fontSize: 11, cursor: 'pointer', borderRadius: 999, border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.25))', background: 'transparent', color: SUB }}>
+                  ☕
+                </button>
+                <button type="button" title="打开分身的手机（请求单/看板/生活速览）" onClick={() => setPhone(p => !p)}
+                  style={{ padding: '1px 8px', fontSize: 11, cursor: 'pointer', borderRadius: 999, border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,.25))', background: 'transparent', color: SUB }}>
+                  📱
+                </button>
               </div>
             </div>
           </div>
 
           <Composer status={st} compact refresh={() => { status.refresh() }} />
 
-          <Section summary="TA 最近的生活">
+          <Section summary="TA 最近的生活" defaultOpen>
             <div style={{ fontSize: 10.5, color: SUB, margin: '-2px 0 2px' }}>安静时空醒约每 30 分钟记一笔（心跳照常每 5 分钟一拍）</div>
             <RecentLife />
           </Section>
@@ -141,17 +183,25 @@ export function CompanionLayer(): JSX.Element {
         </div>
       )}
 
-      {/* 常驻存在体（点击开合；右上角角标=等你给的条数，点角标直达今日待办） */}
+      {/* 手机层（P2）：右键存在体打开——请求单答复/看板速览/时间线速翻 */}
+      {phone && (
+        <div style={{ pointerEvents: 'auto', position: 'relative', marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <Phone status={st} onClose={() => setPhone(false)} onGoTodos={() => { setPhone(false); openTwinTodos() }} />
+        </div>
+      )}
+
+      {/* 常驻存在体（点击开合；右键 = 手机；右上角角标=等你给的条数，点角标直达今日待办） */}
       <div style={{ pointerEvents: 'auto', display: 'flex', justifyContent: 'flex-end' }}>
         <div
           role="button"
-          title={st !== undefined ? presenceLine(st) : '分身'}
+          title={st !== undefined ? presenceLine(st) : '分身（右键打开 TA 的手机）'}
           onClick={() => setOpen(o => !o)}
+          onContextMenu={(e: React.MouseEvent) => { e.preventDefault(); setPhone(p => !p) }}
           style={{ position: 'relative', cursor: 'pointer', padding: 6, borderRadius: '9999px', transition: 'transform .18s ease' }}
           onMouseEnter={(e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.08)' }}
           onMouseLeave={(e: React.MouseEvent) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
         >
-          <Being size={56} status={st} />
+          <Being size={56} status={st} theater={st} />
           {asks > 0 && <AskBadge count={asks} />}
         </div>
       </div>

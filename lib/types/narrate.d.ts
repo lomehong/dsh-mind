@@ -79,4 +79,40 @@ export interface BeingStatusInput {
     pending?: number;
 }
 /** 状态 → 形体情态（优先级：叫停 > 入睡 > 注意到你 > 思考 > 清醒）。 */
+/** 剧场输入：与宿主 StatusPayload 结构同形（客户端直传，G8 纯函数）。 */
+export interface BeingTheaterInput {
+    running?: boolean;
+    backoffLevel?: number;
+    quiet?: {
+        active?: boolean;
+    };
+    spendLevel?: 'normal' | 'soft' | 'hard';
+    pending?: number;
+    pendingApprovals?: number;
+    stoppedByMaster?: boolean;
+    enabled?: boolean;
+    tail?: ReadonlyArray<{
+        type?: string;
+        fn?: string;
+    }>;
+}
+export interface BeingTheater {
+    /** 活动铭牌（emoji）：贴在存在体上的「此刻在做什么」。 */
+    glyph: string;
+    /** 铭牌说明（一两句，可空串）。 */
+    label: string;
+    /** 呼吸节律倍率：1 = 标准；退避越深越缓（0.7–1.8）。 */
+    rhythm: number;
+    /** 光晕明度倍率：静音/深退避时收暗（0.45–1）。 */
+    dim: number;
+}
+/** 活动铭牌推导：最新时间线步骤的函数选择 → emoji 铭牌（P0 剧场）。 */
+export declare function beingGlyph(s: BeingTheaterInput | undefined): {
+    glyph: string;
+    label: string;
+};
+/** 呼吸节律倍率：退避越深越省（呼吸放缓），硬顶时略急促（1±）。 */
+export declare function beingRhythm(s: BeingTheaterInput | undefined): number;
+/** 光晕明度倍率：静音/深退避时收暗（0.55–1）。 */
+export declare function beingDim(s: BeingTheaterInput | undefined): number;
 export declare function beingMood(s: BeingStatusInput | undefined): BeingMood;

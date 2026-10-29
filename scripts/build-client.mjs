@@ -48,3 +48,8 @@ await build({
   legalComments: 'none',
 })
 console.log('[build-client] done.')
+
+// P3 办公室视图页：随包分发（panel-api 同源伺服 /dsh-mind/office）。
+import { copyFileSync, mkdirSync } from 'node:fs'
+mkdirSync(new URL('../lib/', import.meta.url), { recursive: true })
+copyFileSync(new URL('../src/client/office.html', import.meta.url), new URL('../lib/office.html', import.meta.url))

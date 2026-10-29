@@ -197,6 +197,68 @@ export interface BeingStatusInput {
 }
 
 /** 状态 → 形体情态（优先级：叫停 > 入睡 > 注意到你 > 思考 > 清醒）。 */
+
+/** 剧场输入：与宿主 StatusPayload 结构同形（客户端直传，G8 纯函数）。 */
+export interface BeingTheaterInput {
+  running?: boolean
+  backoffLevel?: number
+  quiet?: { active?: boolean }
+  spendLevel?: 'normal' | 'soft' | 'hard'
+  pending?: number
+  pendingApprovals?: number
+  stoppedByMaster?: boolean
+  enabled?: boolean
+  tail?: ReadonlyArray<{ type?: string; fn?: string }>
+}
+
+export interface BeingTheater {
+  /** 活动铭牌（emoji）：贴在存在体上的「此刻在做什么」。 */
+  glyph: string
+  /** 铭牌说明（一两句，可空串）。 */
+  label: string
+  /** 呼吸节律倍率：1 = 标准；退避越深越缓（0.7–1.8）。 */
+  rhythm: number
+  /** 光晕明度倍率：静音/深退避时收暗（0.45–1）。 */
+  dim: number
+}
+
+/** 活动铭牌推导：最新时间线步骤的函数选择 → emoji 铭牌（P0 剧场）。 */
+export function beingGlyph(s: BeingTheaterInput | undefined): { glyph: string; label: string } {
+  if (s === undefined) return { glyph: '🌤', label: '' }
+  if (s.stoppedByMaster || s.enabled === false) return { glyph: '⏸', label: '停着' }
+  if (s.quiet?.active === true) return { glyph: '🌙', label: '睡着' }
+  if ((s.pending ?? 0) > 0) return { glyph: '💬', label: '刚收到你的话' }
+  if (s.running) {
+    const fn = s.tail?.[0]?.fn ?? s.tail?.[0]?.type ?? ''
+    if (fn === 'learn') return { glyph: '📖', label: '在查资料' }
+    if (fn === 'act') return { glyph: '⌨️', label: '在干活' }
+    if (fn === 'share') return { glyph: '📨', label: '在投递' }
+    if (fn === 'recall') return { glyph: '🔎', label: '在回忆' }
+    if (fn === 'think') return { glyph: '💭', label: '在想事' }
+    return { glyph: '⌨️', label: '在干活' }
+  }
+  const fn = s.tail?.[0]?.fn ?? s.tail?.[0]?.type ?? ''
+  if (fn === 'learn') return { glyph: '📖', label: '刚读完资料' }
+  if (fn === 'goals') return { glyph: '🎯', label: '在理目标' }
+  if (fn === 'ask') return { glyph: '🙋', label: '有事等你给' }
+  return { glyph: '🌤', label: '醒着' }
+}
+
+/** 呼吸节律倍率：退避越深越省（呼吸放缓），硬顶时略急促（1±）。 */
+export function beingRhythm(s: BeingTheaterInput | undefined): number {
+  if (s === undefined) return 1
+  if (s.spendLevel === 'hard') return 1.15
+  const lvl = Math.max(0, Math.min(10, Number(s.backoffLevel ?? 0) || 0))
+  return 1 + lvl * 0.08
+}
+
+/** 光晕明度倍率：静音/深退避时收暗（0.55–1）。 */
+export function beingDim(s: BeingTheaterInput | undefined): number {
+  if (s === undefined) return 1
+  if (s.quiet?.active === true) return 0.55
+  const lvl = Math.max(0, Math.min(10, Number(s.backoffLevel ?? 0) || 0))
+  return 1 - Math.min(0.3, lvl * 0.03)
+}
 export function beingMood(s: BeingStatusInput | undefined): BeingMood {
   if (s === undefined) return 'awake'
   if (s.stoppedByMaster || !s.enabled) return 'stopped'
