@@ -9,7 +9,7 @@ import { fetchStatus, usePoll } from './api.ts'
 import { Being } from './Being.tsx'
 import { EngView } from './EngView.tsx'
 import { LifeTimeline } from './LifeTimeline.tsx'
-import { OfficeOverlay } from './OfficeOverlay.tsx'
+import { OfficeView } from './OfficeView.tsx'
 
 const VIEW_KEY = 'dsh-mind.view'
 
@@ -20,7 +20,14 @@ export function MindPage(): JSX.Element {
   })
   const status = usePoll(fetchStatus, 5000)
   if (view === 'office') {
-    return <OfficeOverlay onClose={() => { setView('person') }} />
+    return (
+      <div style={{ padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <ViewToggle view={view} onToggle={() => { setView('person'); try { localStorage.setItem(VIEW_KEY, 'person') } catch { /* 隐私模式忽略 */ } }} />
+        </div>
+        <OfficeView onBack={() => { setView('person'); try { localStorage.setItem(VIEW_KEY, 'person') } catch { /* 隐私模式忽略 */ } }} />
+      </div>
+    )
   }
   if (view === 'eng') {
     return (
