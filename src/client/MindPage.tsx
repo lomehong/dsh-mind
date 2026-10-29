@@ -9,15 +9,19 @@ import { fetchStatus, usePoll } from './api.ts'
 import { Being } from './Being.tsx'
 import { EngView } from './EngView.tsx'
 import { LifeTimeline } from './LifeTimeline.tsx'
+import { OfficeOverlay } from './OfficeOverlay.tsx'
 
 const VIEW_KEY = 'dsh-mind.view'
 
 /** 心智主页（存在体为主；右上角切工程视图）。 */
 export function MindPage(): JSX.Element {
-  const [view, setView] = useState<'person' | 'eng'>(() => {
+  const [view, setView] = useState<'person' | 'eng' | 'office'>(() => {
     try { return localStorage.getItem(VIEW_KEY) === 'eng' ? 'eng' : 'person' } catch { return 'person' }
   })
   const status = usePoll(fetchStatus, 5000)
+  if (view === 'office') {
+    return <OfficeOverlay onClose={() => { setView('person') }} />
+  }
   if (view === 'eng') {
     return (
       <div style={{ padding: 16 }}>
@@ -33,7 +37,7 @@ export function MindPage(): JSX.Element {
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={() => { window.open('/dsh-mind/office', '_blank') }}
+          <button type="button" onClick={() => { setView('office') }}
             style={{ padding: '3px 10px', fontSize: 12, cursor: 'pointer', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l1, #444)', background: 'transparent', color: 'var(--dsw-alias-label-secondary, #aaa)' }}>
             🏢 办公室
           </button>
