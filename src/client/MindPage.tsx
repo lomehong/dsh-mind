@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 心智主页：TA 的房间。存在体为绝对主体——大、居中、有生命。
  * v0.5 去重（主人拍板）：说话/生活流/照看已由右下角常驻存在体承载，此处不再
  * 重复；想调教 TA——切「工程视图」，提示词卡就在那里。
@@ -32,7 +32,13 @@ export function MindPage(): JSX.Element {
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <ViewToggle view={view} onToggle={() => { setView('eng'); try { localStorage.setItem(VIEW_KEY, 'eng') } catch { /* 隐私模式忽略 */ } }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={() => { window.open('/dsh-mind/office', '_blank') }}
+            style={{ padding: '3px 10px', fontSize: 12, cursor: 'pointer', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l1, #444)', background: 'transparent', color: 'var(--dsw-alias-label-secondary, #aaa)' }}>
+            🏢 办公室
+          </button>
+          <ViewToggle view={view} onToggle={() => { setView('eng'); try { localStorage.setItem(VIEW_KEY, 'eng') } catch { /* 隐私模式忽略 */ } }} />
+        </div>
       </div>
       {/* 存在体：TA 的本体 */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '18px 0 6px' }}>
