@@ -204,18 +204,23 @@ export function apply(ctx: Context): void {
   /** 进程内 owner Peer（宿主 0.2.2-rc.3 起 typertGateway invoke/stream 必带 peer；
    *  缺 peer 时 assertPeerLive 读 peer.signal 直接炸——2026-11-16 事故根因）。
    *  懒建一次、进程内复用（与宿主 browserPeer 同款 owner principal，免资源闸）；
-   *  connection 服务缺席（宿主过旧/启动窗口）抛错，由唤醒错误路径退避重试兜住。 */
+   *  connection 服务缺席（宿主过旧/启动窗口/cordis 未声明注入）抛错，由唤醒
+   *  错误路径退避重试兜住——绝不击穿宿主。 */
   let gatewayPeer: GatewayPeer | undefined
   function ensureGatewayPeer(): GatewayPeer {
     if (gatewayPeer !== undefined) return gatewayPeer
-    const connection = ctx.get('connection') as
-      | { createPeer?: (opts: { principal: { kind: string } }) => GatewayPeer }
-      | undefined
-    if (connection?.createPeer === undefined) {
-      throw new Error('connection 服务缺席（无法构造进程内 owner Peer；宿主服务不可用或版本过旧）')
+    try {
+      const connection = ctx.get('connection') as
+        | { createPeer?: (opts: { principal: { kind: string } }) => GatewayPeer }
+        | undefined
+      if (connection?.createPeer === undefined) {
+        throw new Error('connection 服务缺席（宿主版本过旧或服务未挂载）')
+      }
+      gatewayPeer = connection.createPeer({ principal: { kind: 'owner' } })
+      return gatewayPeer
+    } catch (error) {
+      throw new Error(`无法构造进程内 owner Peer（宿主 0.2.2 起 invoke 必带）: ${error instanceof Error ? error.message : String(error)}`)
     }
-    gatewayPeer = connection.createPeer({ principal: { kind: 'owner' } })
-    return gatewayPeer
   }
 
   async function runWake(trigger: TriggerDecision, opts?: { observe?: boolean }): Promise<void> {
