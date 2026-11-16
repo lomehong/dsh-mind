@@ -5,7 +5,7 @@
  * 时钟依赖注入（createRetryMs=0），确定性可测（G8）。
  */
 import { describe, expect, it } from 'vitest'
-import { GatewayClient, type GatewayInvokeSpec, type TypertGateway } from '../src/gateway.ts'
+import { GatewayClient, testGatewayPeer, type GatewayInvokeSpec, type TypertGateway } from '../src/gateway.ts'
 import { isTransientServiceError, WakeRunner } from '../src/runner.ts'
 
 /** 脚本化假网关：按脚本逐次应答 create，其余方法记录调用。 */
@@ -22,7 +22,7 @@ function scriptedGateway(createResults: Array<'ok' | Error>): { gw: GatewayClien
       return {} // rename 等：尽力而为
     },
   }
-  return { gw: new GatewayClient(gw), creates }
+  return { gw: new GatewayClient(gw, testGatewayPeer()), creates }
 }
 
 function runnerFor(gw: GatewayClient): WakeRunner {

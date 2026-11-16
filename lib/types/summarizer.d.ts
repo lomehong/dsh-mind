@@ -6,10 +6,12 @@
  * - 节奏：每次唤醒完成后尝试一次，凑满 F 条未卷积步骤才真正调用（≈每小时 1 次）；
  * - 失败语义：任何失败静默跳过本轮（机械 recap 兜底），绝不击穿宿主（LESSONS 2）。
  */
-import { type TypertGateway } from './gateway.ts';
+import { type GatewayPeer, type TypertGateway } from './gateway.ts';
 import type { TimelineStep } from './timeline.ts';
 export interface RollupOptions {
     gateway: TypertGateway;
+    /** 进程内 owner Peer（宿主 0.2.2 起 invoke 必带——2026-11-16 事故修正）。 */
+    peer: GatewayPeer;
     presetId: string;
     summarizerPresetId?: string;
 }

@@ -6,7 +6,7 @@
  * - 节奏：每次唤醒完成后尝试一次，凑满 F 条未卷积步骤才真正调用（≈每小时 1 次）；
  * - 失败语义：任何失败静默跳过本轮（机械 recap 兜底），绝不击穿宿主（LESSONS 2）。
  */
-import { GatewayClient, type TypertGateway } from './gateway.ts'
+import { GatewayClient, type GatewayPeer, type TypertGateway } from './gateway.ts'
 import { WakeRunner } from './runner.ts'
 import { loadState, saveState } from './state.ts'
 import type { TimelineStep } from './timeline.ts'
@@ -15,6 +15,8 @@ import { readAllSteps } from './recap.ts'
 
 export interface RollupOptions {
   gateway: TypertGateway
+  /** 进程内 owner Peer（宿主 0.2.2 起 invoke 必带——2026-11-16 事故修正）。 */
+  peer: GatewayPeer
   presetId: string
   summarizerPresetId?: string
 }
@@ -27,7 +29,7 @@ export async function tryRollup(opts: RollupOptions): Promise<{ ok: boolean; rea
     const selection = selectRollupSpan(readAllSteps(), cursor)
     if (selection === null) return { ok: false, reason: 'not-due' }
 
-    const gw = new GatewayClient(opts.gateway)
+    const gw = new GatewayClient(opts.gateway, opts.peer)
     const runner = new WakeRunner(gw, {
       presetId: opts.summarizerPresetId ?? 'default',
       title: '🧠 卷积',
