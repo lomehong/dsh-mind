@@ -11,4 +11,8 @@
 import type { Context } from '@deepseek-ai/cordis';
 export declare const name = "dsh-mind";
 export declare const provide: string[];
+/** connection 是模块混入服务（非插件 provide 面）——必须显式声明注入才会被
+ *  park 到本插件 fiber（惰性 ctx.get 拿不到；liveshare 同款范式）。web 部署
+ *  恒在；缺席时 ensureGatewayPeer 给出可诊断错误，由唤醒退避兜住，不击穿宿主。 */
+export declare const inject: string[];
 export declare function apply(ctx: Context): void;

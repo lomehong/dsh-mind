@@ -39,6 +39,10 @@ import { probePresence, type PresenceSnapshot } from './presence.ts'
 
 export const name = 'dsh-mind'
 export const provide = ['dsh-mind']
+/** connection 是模块混入服务（非插件 provide 面）——必须显式声明注入才会被
+ *  park 到本插件 fiber（惰性 ctx.get 拿不到；liveshare 同款范式）。web 部署
+ *  恒在；缺席时 ensureGatewayPeer 给出可诊断错误，由唤醒退避兜住，不击穿宿主。 */
+export const inject = ['connection']
 
 const TICK_MS = 1000
 
@@ -95,6 +99,9 @@ export function apply(ctx: Context): void {
   let presenceSnapshot: PresenceSnapshot | undefined
   /** P1.5 控制台最近活动时刻（shell.overlay 客户端节流心跳写入；0=重启后尚无活动）。 */
   let lastConsoleActivityAt = 0
+  /** 宿主当前源（面板路由注册时缓存）——世界观察默认跟随宿主端口（旧默认
+   *  硬编码 3088，桌面壳换端口后看板感知静默失败）。 */
+  let webOrigin = ''
 
   /** 读记忆条目（dsh-memory 服务面；缺席→空）。 */
   function readMemoryEntries(): Array<{ content: string; ts?: string; seq?: number }> {
@@ -192,6 +199,7 @@ export function apply(ctx: Context): void {
         registerPanelApi(web as never, deps)
         logger.info?.('[dsh-mind] 速览路由已注册（/dsh-mind/*）')
       }
+      webOrigin = (wctx.get('webServer') as { getOrigin?: () => string } | undefined)?.getOrigin?.() ?? ''
     })
   } catch (error) {
     logger.warn?.('[dsh-mind] 面板路由注册失败（显式降级）:', error instanceof Error ? error.message : String(error))
@@ -210,9 +218,8 @@ export function apply(ctx: Context): void {
   function ensureGatewayPeer(): GatewayPeer {
     if (gatewayPeer !== undefined) return gatewayPeer
     try {
-      const connection = ctx.get('connection') as
-        | { createPeer?: (opts: { principal: { kind: string } }) => GatewayPeer }
-        | undefined
+      const connection = (ctx as unknown as { connection?: { createPeer?: (opts: { principal: { kind: string } }) => GatewayPeer } }).connection
+        ?? (ctx.get('connection') as { createPeer?: (opts: { principal: { kind: string } }) => GatewayPeer } | undefined)
       if (connection?.createPeer === undefined) {
         throw new Error('connection 服务缺席（宿主版本过旧或服务未挂载）')
       }
@@ -641,19 +648,24 @@ export function apply(ctx: Context): void {
     const cfgNow = loadMindConfig()
     if (!cfgNow.worldWatchEnabled) return
     // P0 止血（缺席≠空）＋ P2 归因：fetch 失败时沿用上次成功采样；成功时构建
-    // 任务明细（id/column/originBy）与记忆签名，供 diffWorldV2 逐条归因
+    // 任务明细（id/column/originBy）与记忆签名，供 diffWorldV2 逐条归因。
+    // 2026-11-16：看板基址默认跟随宿主当前源（旧默认 3088 在桌面壳换端口后
+    // 恒 404，看板感知静默失败——指纹 b 恒空即为实证）；显式配置仍优先。
     const lastCols = loadState().worldBoard
     let board: WorldCountsV2['board'] | undefined
-    try {
-      const resp = await fetch(`${cfgNow.worldWatchUrl}/dsh-task-board/state`, { signal: AbortSignal.timeout(5000) })
-      const body = (await resp.json()) as { ok?: boolean; state?: { tasks?: Array<{ id?: string; column?: string; originBy?: string }> } }
-      const tasks = body.state?.tasks ?? []
-      if (tasks.some(t => typeof t.id === 'string' && typeof t.column === 'string')) {
-        board = tasks
-          .filter(t => typeof t.id === 'string' && typeof t.column === 'string')
-          .map(t => ({ id: t.id as string, column: t.column as string, ...(typeof t.originBy === 'string' ? { originBy: t.originBy } : {}) }))
-      }
-    } catch { /* 看板缺席/超时：沿用上次分布参与指纹 */ }
+    const boardBase = cfgNow.worldWatchUrl !== '' ? cfgNow.worldWatchUrl : webOrigin
+    if (boardBase !== '') {
+      try {
+        const resp = await fetch(`${boardBase}/dsh-task-board/state`, { signal: AbortSignal.timeout(5000) })
+        const body = (await resp.json()) as { ok?: boolean; state?: { tasks?: Array<{ id?: string; column?: string; originBy?: string }> } }
+        const tasks = body.state?.tasks ?? []
+        if (tasks.some(t => typeof t.id === 'string' && typeof t.column === 'string')) {
+          board = tasks
+            .filter(t => typeof t.id === 'string' && typeof t.column === 'string')
+            .map(t => ({ id: t.id as string, column: t.column as string, ...(typeof t.originBy === 'string' ? { originBy: t.originBy } : {}) }))
+        }
+      } catch { /* 看板缺席/超时：沿用上次分布参与指纹 */ }
+    }
     const entries = readMemoryEntries()
     let memoryCount = 0
     let memoryMaxSeq: number | undefined

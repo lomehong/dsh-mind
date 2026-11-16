@@ -52,7 +52,8 @@ export interface MindConfig {
     presetId: string;
     /** 输入 token 超过此值即重建（弃旧）心智会话 */
     sessionResetTokens: number;
-    /** 世界观察：任务看板基址（分身的感知器官——看板/记忆变化注入观察触发唤醒） */
+    /** 世界观察：任务看板基址（分身的感知器官——看板/记忆变化注入观察触发唤醒）。
+     *  '' = 自动跟随宿主当前源（桌面壳换端口不再失联）；显式 URL 优先。 */
     worldWatchUrl: string;
     /** 世界观察开关 */
     worldWatchEnabled: boolean;
