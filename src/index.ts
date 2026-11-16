@@ -27,7 +27,7 @@ import { tryRollup } from './summarizer.ts'
 import { diffWorldV2, type WorldCountsV2 } from './worldwatch.ts'
 import { loadMissions } from './missions.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, DEEP_THINK_EVERY, evaluateSpend, IDLE_STEP_EVERY, nextDelayMs, presenceGate, scheduleNextSpontaneous,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, DEEP_THINK_EVERY, errorAggDecision, errorAggRowContent, evaluateSpend, IDLE_STEP_EVERY, nextDelayMs, presenceGate, REACTIVE_FAIL_FLOOR_MS, scheduleNextSpontaneous,
   shouldShortCircuitSpontaneous,
   type SchedulerState, type TriggerDecision, type WakeOutcome,
 } from './scheduler.ts'
@@ -514,6 +514,17 @@ export function apply(ctx: Context): void {
       state.backlog = []
     }
     state = advanceAfterWake(state, outcome, cfg)
+    // P0 时间线防刷屏收口：成功唤醒即落同文错误合计行并清账（恢复对主人可见），
+    // 同时清除失败 reactive 重试地板（服务已恢复，队列可正常重触发）。
+    if (state.errorAgg !== undefined && state.errorAgg.count > 0) {
+      state.lastSeq += 1
+      appendStep({
+        v: 2, seq: state.lastSeq, ts: new Date().toISOString(), type: 'error', source: 'mind',
+        content: errorAggRowContent(state.errorAgg, 'flush'),
+      })
+      delete state.errorAgg
+    }
+    delete state.reactiveRetryNotBefore
     state.running = false
     saveState(state)
     logger.info?.(`[dsh-mind] 唤醒完成 fn=${wakeStep.fn} outcome=${outcome} cost=$${cost.toFixed(4)}`)
@@ -812,7 +823,8 @@ export function apply(ctx: Context): void {
       const state = loadState()
       const cfg = loadMindConfig()
       const decision: TriggerDecision = collectDueMindTriggers(Date.now(), state, cfg, {
-        reactiveQueued: reactiveQueue.length > 0,
+        // P0 失败地板：上次 reactive 唤醒失败后的地板期内，队列只合并不重触发
+        reactiveQueued: reactiveQueue.length > 0 && Date.now() >= (state.reactiveRetryNotBefore ?? 0),
         eventQueued: false, // 看板/记忆事件经 checkWorld 以 reactive 注入（§6.4 语义）
       })
       if (!decision.fire) return
@@ -870,15 +882,38 @@ export function apply(ctx: Context): void {
             return
           }
           // 错误退避：失败按 empty 快进 + 显式 error 步骤（errored run ≠ idle）；
-          // 超时错误携带的部分用量照常入台账（token 已计费，不能流失）
+          // 超时错误携带的部分用量照常入台账（token 已计费，不能流失）。
+          // P0 时间线防刷屏（2026-11-16 事故防复发）：连续同文 error 聚合——
+          // 首拍原样落行、重复拍只计数（每 ERROR_AGG_EVERY 拍落一条计数摘要）、
+          // 内容变化先落旧账合计行；成功唤醒收口（见 runWake 成功路径）。
           try {
             const cfgNow = loadMindConfig()
             const s = loadState()
-            s.lastSeq += 1
-            appendStep({
-              v: 2, seq: s.lastSeq, ts: new Date().toISOString(), type: 'error', source: 'mind',
-              content: `唤醒失败（${decision.trigger}）：${error instanceof Error ? error.message : String(error)}`,
-            })
+            const nowIso = new Date().toISOString()
+            const content = `唤醒失败（${decision.trigger}）：${error instanceof Error ? error.message : String(error)}`
+            const aggDecision = errorAggDecision(s.errorAgg, content, nowIso)
+            if (aggDecision.kind === 'flush-and-append') {
+              s.lastSeq += 1
+              appendStep({
+                v: 2, seq: s.lastSeq, ts: nowIso, type: 'error', source: 'mind',
+                content: errorAggRowContent(aggDecision.flush, 'flush'),
+              })
+            }
+            s.errorAgg = aggDecision.agg
+            if (aggDecision.kind === 'append') {
+              s.lastSeq += 1
+              appendStep({ v: 2, seq: s.lastSeq, ts: nowIso, type: 'error', source: 'mind', content })
+            } else if (aggDecision.kind === 'count' && aggDecision.digest) {
+              s.lastSeq += 1
+              appendStep({
+                v: 2, seq: s.lastSeq, ts: nowIso, type: 'error', source: 'mind',
+                content: errorAggRowContent(aggDecision.agg, 'digest'),
+              })
+            }
+            // P0 失败 reactive 重试地板：失败的唤醒不消化 reactive 队列，队列持续
+            // 非空会让下一 tick 无条件重触发（事故中 8s 一拍自旋的油门）。地板期
+            // 队列只合并不丢内容，成功唤醒即清除。
+            if (decision.trigger === 'reactive') s.reactiveRetryNotBefore = Date.now() + REACTIVE_FAIL_FLOOR_MS
             const usage = (error as { usage?: { tokensIn?: number; tokensOut?: number } } | undefined)?.usage
             const uIn = usage?.tokensIn ?? 0
             const uOut = usage?.tokensOut ?? 0

@@ -90,9 +90,53 @@ export interface SchedulerState {
     agendaObservations?: number;
     /** P2 会话作用域 token 累计（mind 会话自上次重置以来的 tokensIn；复用判定用它，不用当日累计） */
     sessionTokensIn?: number;
+    /** P0 时间线防刷屏（2026-11-16 事故防复发）：同文错误聚合账——连续同文
+     *  error 首拍落行 + 每 ERROR_AGG_EVERY 拍落一条计数摘要；内容变化或成功
+     *  唤醒时落合计行收口（事故实证：2179 条同文错误淹没时间线） */
+    errorAgg?: ErrorAgg;
+    /** P0 失败 reactive 重试地板：上次 reactive 唤醒失败后的最早重试时刻
+     *  （失败不消化队列 → 队列持续非空 → 无地板时每 tick 无条件重触发自旋） */
+    reactiveRetryNotBefore?: number;
 }
 /** 机械空醒落步骤的稀疏化：每 N 拍落一条（5 分钟地板 × 6 ≈ 30 分钟一条可审计心跳）。 */
 export declare const IDLE_STEP_EVERY = 6;
+/** P0 时间线防刷屏：同文错误每 N 拍落一条计数摘要行（首拍与收口行永远原样可观测）。 */
+export declare const ERROR_AGG_EVERY = 50;
+/** P0 失败 reactive 重试地板（ms）：失败的唤醒不消化 reactive 队列，队列持续
+ *  非空会让下一 tick 无条件重触发——事故中 8s 一拍自旋的油门。地板期队列只
+ *  合并不丢内容（injectObservation 合并语义），成功唤醒即清除。 */
+export declare const REACTIVE_FAIL_FLOOR_MS = 60000;
+/** 同文错误聚合账（持久化于 state.errorAgg）。 */
+export interface ErrorAgg {
+    /** 完整错误行内容（去重键） */
+    content: string;
+    /** 连续出现次数（首拍=1） */
+    count: number;
+    /** 首拍 ISO 时间 */
+    firstTs: string;
+    /** 末拍 ISO 时间 */
+    lastTs: string;
+}
+export type ErrorAggDecision = {
+    kind: 'append';
+    agg: ErrorAgg;
+} | {
+    kind: 'count';
+    agg: ErrorAgg;
+    digest: boolean;
+} | {
+    kind: 'flush-and-append';
+    flush: ErrorAgg;
+    agg: ErrorAgg;
+};
+/** 同文错误聚合决策（纯函数，G8）：连续同文 error 的落行策略。
+ *  - 首拍（无在账/账已收口/账脏）→ append 原样落行；
+ *  - 同文重复 → count 只计数不落行；每 ERROR_AGG_EVERY 拍置 digest=true 落计数行；
+ *  - 内容变化 → flush-and-append：旧账落合计行，新内容按首拍处理。
+ *  成功唤醒由调用方直接收口（落合计行 + 清账），不经本函数。 */
+export declare function errorAggDecision(existing: ErrorAgg | undefined, content: string, nowIso: string): ErrorAggDecision;
+/** 同文错误计数/合计行的正文（调用方负责 seq/ts/type 封装）。 */
+export declare function errorAggRowContent(agg: ErrorAgg, kind: 'digest' | 'flush'): string;
 /** 深思考拍：每 N 个连续机械空醒拍强制一次真醒（安静世界也要推进长期事项——
  *  纯短路会让分身永远不再自发思考，那是感知器官缺失之外的第二重结构性闲置）。 */
 export declare const DEEP_THINK_EVERY = 12;

@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { CONFIG_DEFAULTS, type MindConfig } from '../src/config.ts'
 import {
-  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, evaluateSpend,
+  advanceAfterWake, collectDueMindTriggers, costUsd, dayKey, decayRejections, errorAggDecision, errorAggRowContent, evaluateSpend,
   isQuietHour, nextDelayMs, scheduleNextSpontaneous, shouldShortCircuitSpontaneous,
   type SchedulerState,
 } from '../src/scheduler.ts'
@@ -23,6 +23,63 @@ function state(overrides: Partial<SchedulerState> = {}): SchedulerState {
 }
 
 const NOON = Date.UTC(2026, 8, 18, 4, 0, 0) // 2026-09-18 12:00 Asia/Shanghai（非静音）
+
+describe('同文错误聚合（P0 时间线防刷屏，2026-11-16 事故防复发）', () => {
+  const ERR = '唤醒失败（reactive）：Cannot read properties of undefined (reading \'signal\')'
+
+  it('首拍 → append 原样落行（count=1，可观测性优先）', () => {
+    const d = errorAggDecision(undefined, ERR, '2026-11-16T01:00:00.000Z')
+    expect(d.kind).toBe('append')
+    expect(d.agg).toEqual({ content: ERR, count: 1, firstTs: '2026-11-16T01:00:00.000Z', lastTs: '2026-11-16T01:00:00.000Z' })
+  })
+
+  it('同文重复 → count 只计数不落行；每 50 拍才置 digest', () => {
+    let agg = errorAggDecision(undefined, ERR, 't1').agg
+    for (let n = 2; n <= 49; n++) {
+      const d = errorAggDecision(agg, ERR, `t${n}`)
+      expect(d.kind).toBe('count')
+      if (d.kind !== 'count') return
+      expect(d.digest).toBe(false)
+      agg = d.agg
+    }
+    const at50 = errorAggDecision(agg, ERR, 't50')
+    expect(at50.kind).toBe('count')
+    if (at50.kind === 'count') {
+      expect(at50.agg.count).toBe(50)
+      expect(at50.digest).toBe(true) // 第 50 拍落一条计数摘要
+    }
+    const at51 = errorAggDecision(at50.kind === 'count' ? at50.agg : agg, ERR, 't51')
+    if (at51.kind === 'count') expect(at51.digest).toBe(false)
+  })
+
+  it('内容变化 → flush-and-append：旧账收口 + 新内容按首拍处理', () => {
+    const agg = errorAggDecision(undefined, ERR, 't1').agg
+    const grown = errorAggDecision(agg, ERR, 't2')
+    if (grown.kind !== 'count') throw new Error('expected count')
+    const d = errorAggDecision(grown.agg, '唤醒失败（spontaneous）：另一种错误', 't3')
+    expect(d.kind).toBe('flush-and-append')
+    if (d.kind !== 'flush-and-append') return
+    expect(d.flush.content).toBe(ERR)
+    expect(d.flush.count).toBe(2)
+    expect(d.agg.content).toBe('唤醒失败（spontaneous）：另一种错误')
+    expect(d.agg.count).toBe(1)
+  })
+
+  it('脏账防护：count<=0 或空内容视同无在账 → append', () => {
+    expect(errorAggDecision({ content: ERR, count: 0, firstTs: 'a', lastTs: 'b' }, ERR, 't1').kind).toBe('append')
+    expect(errorAggDecision({ content: '', count: 3, firstTs: 'a', lastTs: 'b' }, ERR, 't1').kind).toBe('append')
+  })
+
+  it('计数/合计行正文携带次数与首末时间，内容截断 140 字', () => {
+    const agg = { content: 'x'.repeat(300), count: 50, firstTs: 'F', lastTs: 'L' }
+    const digest = errorAggRowContent(agg, 'digest')
+    expect(digest).toContain('×50')
+    expect(digest).toContain('首 F 末 L')
+    expect(digest.length).toBeLessThan(220)
+    const flush = errorAggRowContent(agg, 'flush')
+    expect(flush).toContain('同文错误合计')
+  })
+})
 
 describe('退避阶梯', () => {
   it('自驱地板：默认 5 分钟内不醒（G1「最低 5 分钟一醒」；2026-09-22 成本事故修正）', () => {
